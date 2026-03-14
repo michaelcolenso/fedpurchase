@@ -70,11 +70,12 @@ export async function scheduled(event: ScheduledEvent, env: Env, _ctx: Execution
  * Called via POST /admin/seed-references (protected by secret).
  */
 export async function seedReferenceData(env: Env): Promise<{ agencies: number; pscCodes: number; naicsCodes: number }> {
-  const [agencyCount, pscCount, naicsCount] = await Promise.all([
-    loadAgencies(env),
-    loadPscCodes(env),
-    loadNaicsCodes(env),
-  ]);
-
+  // Run sequentially so failures are easier to identify in logs
+  const agencyCount = await loadAgencies(env);
+  console.log(`seedReferenceData: agencies done (${agencyCount})`);
+  const pscCount = await loadPscCodes(env);
+  console.log(`seedReferenceData: pscCodes done (${pscCount})`);
+  const naicsCount = await loadNaicsCodes(env);
+  console.log(`seedReferenceData: naicsCodes done (${naicsCount})`);
   return { agencies: agencyCount, pscCodes: pscCount, naicsCodes: naicsCount };
 }
