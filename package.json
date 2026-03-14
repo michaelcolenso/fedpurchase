@@ -1,0 +1,23 @@
+{
+  "name": "fedpurchase",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate:local": "wrangler d1 execute fedpurchase --local --file migrations/0001_initial.sql",
+    "db:migrate:remote": "wrangler d1 execute fedpurchase --file migrations/0001_initial.sql",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "drizzle-orm": "^0.38.3",
+    "hono": "^4.7.4"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250310.0",
+    "drizzle-kit": "^0.30.4",
+    "typescript": "^5.8.2",
+    "wrangler": "^3.112.0"
+  }
+}
