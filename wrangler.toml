@@ -16,6 +16,7 @@ preview_id = "9134b92ad1c648bf9975d4db48e3544c"
 [[r2_buckets]]
 binding = "R2"
 bucket_name = "fedpurchase-csv"
+preview_bucket_name = "fedpurchase-csv"
 
 [ai]
 binding = "AI"
