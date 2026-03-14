@@ -6,7 +6,7 @@ compatibility_flags = ["nodejs_compat"]
 [[d1_databases]]
 binding = "DB"
 database_name = "fedpurchase"
-database_id = "00000000-0000-0000-0000-000000000000"
+database_id = "519bde12-e5b6-4df6-b46d-9915abc8efc3"
 
 [[kv_namespaces]]
 binding = "KV"
