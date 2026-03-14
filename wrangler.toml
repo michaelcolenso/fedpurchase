@@ -1,0 +1,24 @@
+name = "fedpurchase"
+main = "src/index.ts"
+compatibility_date = "2024-09-23"
+compatibility_flags = ["nodejs_compat"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "fedpurchase"
+database_id = "00000000-0000-0000-0000-000000000000"
+
+[[kv_namespaces]]
+binding = "KV"
+id = "00000000000000000000000000000000"
+preview_id = "00000000000000000000000000000000"
+
+[[r2_buckets]]
+binding = "R2"
+bucket_name = "fedpurchase-csv"
+
+[ai]
+binding = "AI"
+
+[triggers]
+crons = ["0 3 * * 1", "0 4 1 * *"]
