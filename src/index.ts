@@ -30,7 +30,7 @@ app.get('/insights/:year/:topicSlug', insightsHandler);
 
 // Sitemaps
 app.get('/sitemap.xml', sitemapIndexHandler);
-app.get('/sitemap/:segment{[a-z]+}\\.xml', sitemapSegmentHandler);
+app.get('/sitemap/:segment{[a-z]+}.xml', sitemapSegmentHandler);
 
 // robots.txt
 app.get('/robots.txt', (c) =>
