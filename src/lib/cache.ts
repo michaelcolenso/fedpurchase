@@ -42,4 +42,5 @@ export const cacheKeys = {
     agencySlug ? `page:industry:${naicsCode}:${agencySlug}` : `page:industry:${naicsCode}`,
   aiCopy: (agencySlug: string, pscSlug: string) => `ai:${agencySlug}:${pscSlug}`,
   sitemap: (segment: string) => `sitemap:${segment}`,
+  insightsPage: (fy: number, topicSlug: string) => `page:insights:${fy}:${topicSlug}`,
 };

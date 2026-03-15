@@ -7,6 +7,7 @@ import { insightsHandler } from './routes/insights';
 import { sitemapIndexHandler, sitemapSegmentHandler } from './routes/sitemap';
 import { scheduled as scheduledHandler } from './cron';
 import { seedReferenceData } from './cron';
+import { backfillFiscalYear } from './pipeline/backfill';
 import type { Env } from './types';
 
 const app = new Hono<{ Bindings: Env }>();
@@ -175,6 +176,42 @@ app.post('/admin/load-transactions', async (c) => {
     }
     return c.json({ ok: true, inserted });
   } catch (err) {
+    return c.json({ error: String(err) }, 500);
+  }
+});
+
+// Admin: backfill historical data for one or more fiscal years
+app.post('/admin/backfill', async (c) => {
+  const authHeader = c.req.header('Authorization');
+  const adminSecret = (c.env as unknown as { ADMIN_SECRET?: string }).ADMIN_SECRET;
+
+  if (adminSecret && authHeader !== `Bearer ${adminSecret}`) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
+
+  try {
+    const body = await c.req.json() as { fiscalYears?: number[] };
+    const fiscalYears = body.fiscalYears ?? [2022, 2023, 2024, 2025];
+
+    if (!Array.isArray(fiscalYears) || fiscalYears.some((fy) => typeof fy !== 'number')) {
+      return c.json({ error: 'fiscalYears must be an array of numbers' }, 400);
+    }
+
+    const { recomputeRollups } = await import('./pipeline/rollups');
+    const results: Record<string, number> = {};
+
+    for (const fy of fiscalYears) {
+      console.log(`Starting backfill for FY${fy}...`);
+      results[`FY${fy}`] = await backfillFiscalYear(c.env, fy);
+    }
+
+    console.log('Backfill complete. Recomputing rollups...');
+    await recomputeRollups(c.env);
+
+    const totalInserted = Object.values(results).reduce((sum, n) => sum + n, 0);
+    return c.json({ ok: true, results, totalInserted });
+  } catch (err) {
+    console.error('Backfill error:', err);
     return c.json({ error: String(err) }, 500);
   }
 });
