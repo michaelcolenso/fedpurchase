@@ -6,16 +6,17 @@ compatibility_flags = ["nodejs_compat"]
 [[d1_databases]]
 binding = "DB"
 database_name = "fedpurchase"
-database_id = "00000000-0000-0000-0000-000000000000"
+database_id = "519bde12-e5b6-4df6-b46d-9915abc8efc3"
 
 [[kv_namespaces]]
 binding = "KV"
-id = "00000000000000000000000000000000"
-preview_id = "00000000000000000000000000000000"
+id = "9134b92ad1c648bf9975d4db48e3544c"
+preview_id = "9134b92ad1c648bf9975d4db48e3544c"
 
 [[r2_buckets]]
 binding = "R2"
 bucket_name = "fedpurchase-csv"
+preview_bucket_name = "fedpurchase-csv"
 
 [ai]
 binding = "AI"
