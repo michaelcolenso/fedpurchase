@@ -1,6 +1,5 @@
 import { drizzle } from 'drizzle-orm/d1';
-import { eq, and } from 'drizzle-orm';
-import { microPurchases, agencies } from '../schema';
+import { agencies } from '../schema';
 import { currentFiscalYear } from '../lib/format';
 import type { Env } from '../types';
 
@@ -13,30 +12,31 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-interface AwardResult {
-  internal_id: string;
-  'Recipient Name': string;
-  recipient_uei: string;
-  'Award Amount': number;
+/**
+ * Response shape from /api/v2/search/spending_by_transaction/
+ * Field names match the USASpending API response keys exactly.
+ */
+interface TransactionResult {
+  internal_id: number;
+  'Recipient Name': string | null;
+  'Recipient UEI': string | null;
+  'Transaction Amount': number;
   'Action Date': string | null;
-  'Award Description': string | null;
+  'Transaction Description': string | null;
   awarding_agency_id: number | null;
   naics_code: string | null;
-  'Product or Service Code': string | null;
-  'Place of Performance State Code': string | null;
-  'Place of Performance City Name': string | null;
+  product_or_service_code: string | null;
+  pop_state_code: string | null;
+  pop_city_name: string | null;
 }
 
-interface SpendingByAwardResponse {
-  results: AwardResult[];
+interface SpendingByTransactionResponse {
+  results: TransactionResult[];
   page_metadata: {
     page: number;
-    next: string | null;
-    previous: string | null;
+    next: number | null;
     hasNext: boolean;
-    hasPrevious: boolean;
-    count: number;
-    num_pages: number;
+    count?: number;
   };
 }
 
@@ -52,7 +52,8 @@ function fiscalYearFromDate(dateStr: string): number {
 }
 
 /**
- * Core ingest logic for a specific date range. Returns number of new records inserted.
+ * Core ingest logic for a specific date range using the spending_by_transaction endpoint.
+ * Returns number of new records inserted.
  */
 export async function ingestDateRange(
   env: Env,
@@ -60,14 +61,21 @@ export async function ingestDateRange(
   endDate: Date,
   agencyByToptierId?: Map<number, number>
 ): Promise<number> {
-  const db = drizzle(env.DB);
   const formatDate = (d: Date) => d.toISOString().split('T')[0];
 
   // Build agency lookup if not provided
   if (!agencyByToptierId) {
+    const db = drizzle(env.DB);
     const agencyRows = await db.select({ id: agencies.id, toptierId: agencies.toptierId }).from(agencies).all();
     agencyByToptierId = new Map(agencyRows.map((a) => [a.toptierId, a.id]));
   }
+
+  // Prepare bulk insert statement
+  const insertStmt = env.DB.prepare(
+    `INSERT OR IGNORE INTO micro_purchases
+       (award_id, agency_id, psc_code, naics_code, recipient_name, recipient_uei, amount, action_date, fiscal_year, description, place_state, place_city)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  );
 
   let page = 1;
   let totalIngested = 0;
@@ -83,23 +91,23 @@ export async function ingestDateRange(
       fields: [
         'internal_id',
         'Recipient Name',
-        'recipient_uei',
-        'Award Amount',
+        'Recipient UEI',
+        'Transaction Amount',
         'Action Date',
-        'Award Description',
+        'Transaction Description',
         'awarding_agency_id',
         'naics_code',
-        'Product or Service Code',
-        'Place of Performance State Code',
-        'Place of Performance City Name',
+        'product_or_service_code',
+        'pop_state_code',
+        'pop_city_name',
       ],
       limit: PAGE_SIZE,
       page,
-      sort: 'Award Amount',
+      sort: 'Action Date',
       order: 'desc',
     };
 
-    const response = await fetch(`${USA_SPENDING_BASE}/api/v2/search/spending_by_award/`, {
+    const response = await fetch(`${USA_SPENDING_BASE}/api/v2/search/spending_by_transaction/`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -110,41 +118,36 @@ export async function ingestDateRange(
       break;
     }
 
-    const data = await response.json() as SpendingByAwardResponse;
+    const data = await response.json() as SpendingByTransactionResponse;
     const results = data.results;
+    if (!results || results.length === 0) break;
 
-    for (const award of results) {
-      const agencyId = award.awarding_agency_id ? (agencyByToptierId.get(award.awarding_agency_id) ?? null) : null;
-      const actionDate = award['Action Date'];
+    // Batch insert all records in this page
+    const statements = results.map((tx) => {
+      const agencyId = tx.awarding_agency_id ? (agencyByToptierId!.get(tx.awarding_agency_id) ?? null) : null;
+      const actionDate = tx['Action Date'] ?? null;
       const fiscalYear = actionDate ? fiscalYearFromDate(actionDate) : currentFiscalYear();
+      return insertStmt.bind(
+        String(tx.internal_id),
+        agencyId,
+        tx.product_or_service_code ?? null,
+        tx.naics_code ?? null,
+        tx['Recipient Name'] ?? null,
+        tx['Recipient UEI'] ?? null,
+        tx['Transaction Amount'],
+        actionDate,
+        fiscalYear,
+        tx['Transaction Description'] ?? null,
+        tx.pop_state_code ?? null,
+        tx.pop_city_name ?? null,
+      );
+    });
 
-      // Upsert: skip if award_id already exists
-      const existing = await db
-        .select({ id: microPurchases.id })
-        .from(microPurchases)
-        .where(eq(microPurchases.awardId, String(award.internal_id)))
-        .get();
+    const batchResults = await env.DB.batch(statements);
+    const inserted = batchResults.reduce((sum, r) => sum + (r.meta?.changes ?? 0), 0);
+    totalIngested += inserted;
 
-      if (!existing) {
-        await db.insert(microPurchases).values({
-          awardId: String(award.internal_id),
-          agencyId,
-          pscCode: award['Product or Service Code'],
-          naicsCode: award.naics_code,
-          recipientName: award['Recipient Name'],
-          recipientUei: award.recipient_uei,
-          amount: award['Award Amount'],
-          actionDate,
-          fiscalYear,
-          description: award['Award Description'],
-          placeState: award['Place of Performance State Code'],
-          placeCity: award['Place of Performance City Name'],
-        });
-        totalIngested++;
-      }
-    }
-
-    hasMore = data.page_metadata.hasNext && results.length === PAGE_SIZE;
+    hasMore = data.page_metadata?.hasNext && results.length === PAGE_SIZE;
     page++;
 
     if (hasMore) {

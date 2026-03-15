@@ -279,6 +279,25 @@ app.post('/admin/migrate-unique-award-id', async (c) => {
   }
 });
 
+// Admin: check database statistics
+app.get('/admin/stats', async (c) => {
+  const authHeader = c.req.header('Authorization');
+  const adminSecret = (c.env as unknown as { ADMIN_SECRET?: string }).ADMIN_SECRET;
+  if (adminSecret && authHeader !== `Bearer ${adminSecret}`) return c.json({ error: 'Unauthorized' }, 401);
+
+  try {
+    const [total, withUei, byFy, agencyCount] = await Promise.all([
+      c.env.DB.prepare('SELECT COUNT(*) as cnt FROM micro_purchases').first<{ cnt: number }>(),
+      c.env.DB.prepare('SELECT COUNT(*) as cnt FROM micro_purchases WHERE recipient_uei IS NOT NULL').first<{ cnt: number }>(),
+      c.env.DB.prepare('SELECT fiscal_year, COUNT(*) as cnt, SUM(amount) as total FROM micro_purchases GROUP BY fiscal_year ORDER BY fiscal_year').all<{ fiscal_year: number; cnt: number; total: number }>(),
+      c.env.DB.prepare('SELECT COUNT(*) as cnt FROM agencies').first<{ cnt: number }>(),
+    ]);
+    return c.json({ total: total?.cnt, withUei: withUei?.cnt, byFy: byFy.results, agencies: agencyCount?.cnt });
+  } catch (err) {
+    return c.json({ error: String(err) }, 500);
+  }
+});
+
 // Admin: debug endpoint to test USASpending API connectivity from the Worker
 app.get('/admin/debug-api', async (c) => {
   const authHeader = c.req.header('Authorization');
@@ -327,6 +346,34 @@ app.post('/admin/backfill-month', async (c) => {
     return c.json({ ok: true, year, month, inserted });
   } catch (err) {
     console.error('Backfill-month error:', err);
+    return c.json({ error: String(err) }, 500);
+  }
+});
+
+// Admin: recompute rollups only (without ingest)
+app.post('/admin/recompute-rollups', async (c) => {
+  const authHeader = c.req.header('Authorization');
+  const adminSecret = (c.env as unknown as { ADMIN_SECRET?: string }).ADMIN_SECRET;
+  if (adminSecret && authHeader !== `Bearer ${adminSecret}`) return c.json({ error: 'Unauthorized' }, 401);
+  try {
+    const { recomputeRollups } = await import('./pipeline/rollups');
+    await recomputeRollups(c.env);
+    return c.json({ ok: true });
+  } catch (err) {
+    console.error('Rollup error:', err);
+    return c.json({ error: String(err) }, 500);
+  }
+});
+
+// Admin: clear bad records (those with null fiscal_year from wrong API endpoint usage)
+app.post('/admin/clear-bad-records', async (c) => {
+  const authHeader = c.req.header('Authorization');
+  const adminSecret = (c.env as unknown as { ADMIN_SECRET?: string }).ADMIN_SECRET;
+  if (adminSecret && authHeader !== `Bearer ${adminSecret}`) return c.json({ error: 'Unauthorized' }, 401);
+  try {
+    const result = await c.env.DB.prepare('DELETE FROM micro_purchases WHERE fiscal_year IS NULL').run();
+    return c.json({ ok: true, deleted: result.meta?.changes ?? 0 });
+  } catch (err) {
     return c.json({ error: String(err) }, 500);
   }
 });

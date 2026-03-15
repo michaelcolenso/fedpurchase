@@ -1,12 +1,9 @@
-import { drizzle } from 'drizzle-orm/d1';
-import { eq } from 'drizzle-orm';
-import { pscCodes } from '../schema';
 import { toSlug } from '../lib/slug';
-import { currentFiscalYear } from '../lib/format';
 import type { Env } from '../types';
 
 /**
  * Recompute all rollup tables from the micro_purchases raw data.
+ * Uses SQL aggregation to avoid N+1 query patterns that exceed D1 subrequest limits.
  */
 export async function recomputeRollups(env: Env): Promise<void> {
   await recomputeAgencyPscRollups(env);
@@ -14,100 +11,80 @@ export async function recomputeRollups(env: Env): Promise<void> {
   await recomputeVendorProfiles(env);
 }
 
-interface AgencyPscRow {
-  agency_id: number;
-  psc_code: string;
-  fiscal_year: number;
-  total_amount: number;
-  transaction_count: number;
-  unique_vendors: number;
-  top_vendor_name: string | null;
-  top_vendor_amount: number | null;
-  avg_transaction_size: number;
-}
-
 /**
- * Recompute agency × PSC rollups.
+ * Recompute agency × PSC rollups using a single aggregate query + batch inserts.
  */
 async function recomputeAgencyPscRollups(env: Env): Promise<void> {
-  const db = drizzle(env.DB);
   const now = new Date().toISOString();
-  const fy = currentFiscalYear();
 
-  // Aggregate micro_purchases by agency_id, psc_code, fiscal_year
+  // Single query: aggregate all groups + get top vendor per group via subquery
+  interface AgencyPscRow {
+    agency_id: number;
+    psc_code: string;
+    fiscal_year: number;
+    total_amount: number;
+    transaction_count: number;
+    unique_vendors: number;
+    avg_transaction_size: number;
+    top_vendor_name: string | null;
+    top_vendor_amount: number | null;
+    category_slug: string | null;
+  }
+
   const rows = await env.DB.prepare(`
+    WITH vendor_totals AS (
+      SELECT agency_id, psc_code, fiscal_year, recipient_uei, recipient_name,
+             SUM(amount) AS vendor_total,
+             ROW_NUMBER() OVER (PARTITION BY agency_id, psc_code, fiscal_year ORDER BY SUM(amount) DESC) AS rn
+      FROM micro_purchases
+      WHERE agency_id IS NOT NULL AND psc_code IS NOT NULL AND recipient_uei IS NOT NULL
+      GROUP BY agency_id, psc_code, fiscal_year, recipient_uei
+    )
     SELECT
-      agency_id,
-      psc_code,
-      fiscal_year,
-      SUM(amount) AS total_amount,
-      COUNT(*) AS transaction_count,
-      COUNT(DISTINCT recipient_uei) AS unique_vendors,
-      AVG(amount) AS avg_transaction_size
-    FROM micro_purchases
-    WHERE agency_id IS NOT NULL AND psc_code IS NOT NULL
-    GROUP BY agency_id, psc_code, fiscal_year
+      mp.agency_id,
+      mp.psc_code,
+      mp.fiscal_year,
+      SUM(mp.amount)           AS total_amount,
+      COUNT(*)                 AS transaction_count,
+      COUNT(DISTINCT mp.recipient_uei) AS unique_vendors,
+      AVG(mp.amount)           AS avg_transaction_size,
+      vt.recipient_name        AS top_vendor_name,
+      vt.vendor_total          AS top_vendor_amount,
+      pc.category_slug
+    FROM micro_purchases mp
+    LEFT JOIN vendor_totals vt
+      ON mp.agency_id = vt.agency_id AND mp.psc_code = vt.psc_code AND mp.fiscal_year = vt.fiscal_year AND vt.rn = 1
+    LEFT JOIN psc_codes pc ON mp.psc_code = pc.code
+    WHERE mp.agency_id IS NOT NULL AND mp.psc_code IS NOT NULL
+    GROUP BY mp.agency_id, mp.psc_code, mp.fiscal_year
   `).all<AgencyPscRow>();
 
-  // For top vendor per group
-  for (const row of rows.results) {
-    const topVendor = await env.DB.prepare(`
-      SELECT recipient_name, SUM(amount) AS vendor_total
-      FROM micro_purchases
-      WHERE agency_id = ? AND psc_code = ? AND fiscal_year = ?
-      GROUP BY recipient_uei
-      ORDER BY vendor_total DESC
-      LIMIT 1
-    `).bind(row.agency_id, row.psc_code, row.fiscal_year).first<{ recipient_name: string; vendor_total: number }>();
+  if (rows.results.length === 0) return;
 
-    // Look up category slug from psc_codes table
-    const pscRow = await db.select({ categorySlug: pscCodes.categorySlug }).from(pscCodes)
-      .where(eq(pscCodes.code, row.psc_code)).get();
-    const categorySlug = pscRow?.categorySlug ?? toSlug(row.psc_code);
+  // Delete existing rollups and bulk-insert fresh ones
+  await env.DB.prepare('DELETE FROM agency_psc_rollups').run();
 
-    // Calculate YoY growth
-    const prevFyRow = await env.DB.prepare(`
-      SELECT total_amount FROM agency_psc_rollups
-      WHERE agency_id = ? AND psc_code = ? AND fiscal_year = ?
-    `).bind(row.agency_id, row.psc_code, row.fiscal_year - 1).first<{ total_amount: number }>();
+  const stmt = env.DB.prepare(`
+    INSERT INTO agency_psc_rollups
+      (agency_id, psc_code, category_slug, fiscal_year, total_amount, transaction_count,
+       unique_vendors, top_vendor_name, top_vendor_amount, avg_transaction_size, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
 
-    let yoyGrowthPct: number | null = null;
-    if (prevFyRow && prevFyRow.total_amount > 0) {
-      yoyGrowthPct = ((row.total_amount - prevFyRow.total_amount) / prevFyRow.total_amount) * 100;
-    }
-
-    // Upsert rollup
-    await env.DB.prepare(`
-      INSERT INTO agency_psc_rollups
-        (agency_id, psc_code, category_slug, fiscal_year, total_amount, transaction_count, unique_vendors,
-         top_vendor_name, top_vendor_amount, avg_transaction_size, yoy_growth_pct, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(id) DO UPDATE SET
-        total_amount = excluded.total_amount,
-        transaction_count = excluded.transaction_count,
-        unique_vendors = excluded.unique_vendors,
-        top_vendor_name = excluded.top_vendor_name,
-        top_vendor_amount = excluded.top_vendor_amount,
-        avg_transaction_size = excluded.avg_transaction_size,
-        yoy_growth_pct = excluded.yoy_growth_pct,
-        updated_at = excluded.updated_at
-    `).bind(
-      row.agency_id, row.psc_code, categorySlug, row.fiscal_year,
-      row.total_amount, row.transaction_count, row.unique_vendors,
-      topVendor?.recipient_name ?? null, topVendor?.vendor_total ?? null,
-      row.avg_transaction_size, yoyGrowthPct, now
-    ).run();
+  // Batch in chunks of 100 to stay within subrequest limits
+  for (let i = 0; i < rows.results.length; i += 100) {
+    const chunk = rows.results.slice(i, i + 100);
+    const statements = chunk.map((row) =>
+      stmt.bind(
+        row.agency_id, row.psc_code,
+        row.category_slug ?? toSlug(row.psc_code),
+        row.fiscal_year, row.total_amount, row.transaction_count,
+        row.unique_vendors, row.top_vendor_name ?? null, row.top_vendor_amount ?? null,
+        row.avg_transaction_size, now
+      )
+    );
+    await env.DB.batch(statements);
   }
-}
-
-interface AgencyNaicsRow {
-  agency_id: number;
-  naics_code: string;
-  fiscal_year: number;
-  total_amount: number;
-  transaction_count: number;
-  unique_vendors: number;
-  avg_transaction_size: number;
 }
 
 /**
@@ -116,142 +93,145 @@ interface AgencyNaicsRow {
 async function recomputeAgencyNaicsRollups(env: Env): Promise<void> {
   const now = new Date().toISOString();
 
+  interface AgencyNaicsRow {
+    agency_id: number;
+    naics_code: string;
+    fiscal_year: number;
+    total_amount: number;
+    transaction_count: number;
+    unique_vendors: number;
+    avg_transaction_size: number;
+    top_vendor_name: string | null;
+    top_vendor_amount: number | null;
+  }
+
   const rows = await env.DB.prepare(`
+    WITH vendor_totals AS (
+      SELECT agency_id, naics_code, fiscal_year, recipient_uei, recipient_name,
+             SUM(amount) AS vendor_total,
+             ROW_NUMBER() OVER (PARTITION BY agency_id, naics_code, fiscal_year ORDER BY SUM(amount) DESC) AS rn
+      FROM micro_purchases
+      WHERE agency_id IS NOT NULL AND naics_code IS NOT NULL AND recipient_uei IS NOT NULL
+      GROUP BY agency_id, naics_code, fiscal_year, recipient_uei
+    )
     SELECT
-      agency_id,
-      naics_code,
-      fiscal_year,
-      SUM(amount) AS total_amount,
-      COUNT(*) AS transaction_count,
-      COUNT(DISTINCT recipient_uei) AS unique_vendors,
-      AVG(amount) AS avg_transaction_size
-    FROM micro_purchases
-    WHERE agency_id IS NOT NULL AND naics_code IS NOT NULL
-    GROUP BY agency_id, naics_code, fiscal_year
+      mp.agency_id,
+      mp.naics_code,
+      mp.fiscal_year,
+      SUM(mp.amount)           AS total_amount,
+      COUNT(*)                 AS transaction_count,
+      COUNT(DISTINCT mp.recipient_uei) AS unique_vendors,
+      AVG(mp.amount)           AS avg_transaction_size,
+      vt.recipient_name        AS top_vendor_name,
+      vt.vendor_total          AS top_vendor_amount
+    FROM micro_purchases mp
+    LEFT JOIN vendor_totals vt
+      ON mp.agency_id = vt.agency_id AND mp.naics_code = vt.naics_code AND mp.fiscal_year = vt.fiscal_year AND vt.rn = 1
+    WHERE mp.agency_id IS NOT NULL AND mp.naics_code IS NOT NULL
+    GROUP BY mp.agency_id, mp.naics_code, mp.fiscal_year
   `).all<AgencyNaicsRow>();
 
-  for (const row of rows.results) {
-    const topVendor = await env.DB.prepare(`
-      SELECT recipient_name, SUM(amount) AS vendor_total
-      FROM micro_purchases
-      WHERE agency_id = ? AND naics_code = ? AND fiscal_year = ?
-      GROUP BY recipient_uei
-      ORDER BY vendor_total DESC
-      LIMIT 1
-    `).bind(row.agency_id, row.naics_code, row.fiscal_year).first<{ recipient_name: string; vendor_total: number }>();
+  if (rows.results.length === 0) return;
 
-    const naicsSlug = toSlug(row.naics_code);
+  await env.DB.prepare('DELETE FROM agency_naics_rollups').run();
 
-    const prevFyRow = await env.DB.prepare(`
-      SELECT total_amount FROM agency_naics_rollups
-      WHERE agency_id = ? AND naics_code = ? AND fiscal_year = ?
-    `).bind(row.agency_id, row.naics_code, row.fiscal_year - 1).first<{ total_amount: number }>();
+  const stmt = env.DB.prepare(`
+    INSERT INTO agency_naics_rollups
+      (agency_id, naics_code, naics_slug, fiscal_year, total_amount, transaction_count,
+       unique_vendors, top_vendor_name, top_vendor_amount, avg_transaction_size, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
 
-    let yoyGrowthPct: number | null = null;
-    if (prevFyRow && prevFyRow.total_amount > 0) {
-      yoyGrowthPct = ((row.total_amount - prevFyRow.total_amount) / prevFyRow.total_amount) * 100;
-    }
-
-    await env.DB.prepare(`
-      INSERT INTO agency_naics_rollups
-        (agency_id, naics_code, naics_slug, fiscal_year, total_amount, transaction_count, unique_vendors,
-         top_vendor_name, top_vendor_amount, avg_transaction_size, yoy_growth_pct, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(id) DO UPDATE SET
-        total_amount = excluded.total_amount,
-        transaction_count = excluded.transaction_count,
-        unique_vendors = excluded.unique_vendors,
-        top_vendor_name = excluded.top_vendor_name,
-        top_vendor_amount = excluded.top_vendor_amount,
-        avg_transaction_size = excluded.avg_transaction_size,
-        yoy_growth_pct = excluded.yoy_growth_pct,
-        updated_at = excluded.updated_at
-    `).bind(
-      row.agency_id, row.naics_code, naicsSlug, row.fiscal_year,
-      row.total_amount, row.transaction_count, row.unique_vendors,
-      topVendor?.recipient_name ?? null, topVendor?.vendor_total ?? null,
-      row.avg_transaction_size, yoyGrowthPct, now
-    ).run();
+  for (let i = 0; i < rows.results.length; i += 100) {
+    const chunk = rows.results.slice(i, i + 100);
+    const statements = chunk.map((row) =>
+      stmt.bind(
+        row.agency_id, row.naics_code, toSlug(row.naics_code), row.fiscal_year,
+        row.total_amount, row.transaction_count, row.unique_vendors,
+        row.top_vendor_name ?? null, row.top_vendor_amount ?? null,
+        row.avg_transaction_size, now
+      )
+    );
+    await env.DB.batch(statements);
   }
 }
 
-interface VendorRow {
-  recipient_uei: string;
-  recipient_name: string;
-  total_amount: number;
-  transaction_count: number;
-  agency_count: number;
-  first_seen: string;
-  last_seen: string;
-}
-
 /**
- * Recompute vendor profiles from micro_purchases.
+ * Recompute vendor profiles.
  */
 async function recomputeVendorProfiles(env: Env): Promise<void> {
-  const db = drizzle(env.DB);
   const now = new Date().toISOString();
 
+  interface VendorRow {
+    recipient_uei: string;
+    recipient_name: string;
+    total_amount: number;
+    transaction_count: number;
+    agency_count: number;
+    first_seen: string | null;
+    last_seen: string | null;
+    top_agency_name: string | null;
+    top_psc_category: string | null;
+  }
+
   const rows = await env.DB.prepare(`
-    SELECT
-      recipient_uei,
-      recipient_name,
-      SUM(amount) AS total_amount,
-      COUNT(*) AS transaction_count,
-      COUNT(DISTINCT agency_id) AS agency_count,
-      MIN(action_date) AS first_seen,
-      MAX(action_date) AS last_seen
-    FROM micro_purchases
-    WHERE recipient_uei IS NOT NULL
-    GROUP BY recipient_uei
-    ORDER BY total_amount DESC
-  `).all<VendorRow>();
-
-  for (const row of rows.results) {
-    if (!row.recipient_uei || !row.recipient_name) continue;
-
-    const slug = toSlug(row.recipient_name);
-
-    const topAgency = await env.DB.prepare(`
-      SELECT a.name, SUM(mp.amount) AS agency_total
+    WITH agency_totals AS (
+      SELECT mp.recipient_uei, a.name AS agency_name, SUM(mp.amount) AS agency_total,
+             ROW_NUMBER() OVER (PARTITION BY mp.recipient_uei ORDER BY SUM(mp.amount) DESC) AS rn
       FROM micro_purchases mp
       JOIN agencies a ON mp.agency_id = a.id
-      WHERE mp.recipient_uei = ?
-      GROUP BY mp.agency_id
-      ORDER BY agency_total DESC
-      LIMIT 1
-    `).bind(row.recipient_uei).first<{ name: string; agency_total: number }>();
-
-    const topPsc = await env.DB.prepare(`
-      SELECT p.category_name, SUM(mp.amount) AS psc_total
+      WHERE mp.recipient_uei IS NOT NULL
+      GROUP BY mp.recipient_uei, mp.agency_id
+    ),
+    psc_totals AS (
+      SELECT mp.recipient_uei, pc.category_name, SUM(mp.amount) AS psc_total,
+             ROW_NUMBER() OVER (PARTITION BY mp.recipient_uei ORDER BY SUM(mp.amount) DESC) AS rn
       FROM micro_purchases mp
-      LEFT JOIN psc_codes p ON mp.psc_code = p.code
-      WHERE mp.recipient_uei = ?
-      GROUP BY mp.psc_code
-      ORDER BY psc_total DESC
-      LIMIT 1
-    `).bind(row.recipient_uei).first<{ category_name: string | null; psc_total: number }>();
+      LEFT JOIN psc_codes pc ON mp.psc_code = pc.code
+      WHERE mp.recipient_uei IS NOT NULL
+      GROUP BY mp.recipient_uei, mp.psc_code
+    )
+    SELECT
+      mp.recipient_uei,
+      mp.recipient_name,
+      SUM(mp.amount)             AS total_amount,
+      COUNT(*)                   AS transaction_count,
+      COUNT(DISTINCT mp.agency_id) AS agency_count,
+      MIN(mp.action_date)        AS first_seen,
+      MAX(mp.action_date)        AS last_seen,
+      at.agency_name             AS top_agency_name,
+      pt.category_name           AS top_psc_category
+    FROM micro_purchases mp
+    LEFT JOIN agency_totals at ON mp.recipient_uei = at.recipient_uei AND at.rn = 1
+    LEFT JOIN psc_totals pt ON mp.recipient_uei = pt.recipient_uei AND pt.rn = 1
+    WHERE mp.recipient_uei IS NOT NULL
+    GROUP BY mp.recipient_uei
+    ORDER BY total_amount DESC
+    LIMIT 10000
+  `).all<VendorRow>();
 
-    // Upsert vendor profile
-    await env.DB.prepare(`
-      INSERT INTO vendor_profiles
-        (uei, name, slug, total_micro_purchase_amount, total_transactions, agency_count,
-         top_agency_name, top_psc_category, first_seen, last_seen, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(uei) DO UPDATE SET
-        name = excluded.name,
-        total_micro_purchase_amount = excluded.total_micro_purchase_amount,
-        total_transactions = excluded.total_transactions,
-        agency_count = excluded.agency_count,
-        top_agency_name = excluded.top_agency_name,
-        top_psc_category = excluded.top_psc_category,
-        last_seen = excluded.last_seen,
-        updated_at = excluded.updated_at
-    `).bind(
-      row.recipient_uei, row.recipient_name, slug,
-      row.total_amount, row.transaction_count, row.agency_count,
-      topAgency?.name ?? null, topPsc?.category_name ?? null,
-      row.first_seen, row.last_seen, now
-    ).run();
+  if (rows.results.length === 0) return;
+
+  await env.DB.prepare('DELETE FROM vendor_profiles').run();
+
+  const stmt = env.DB.prepare(`
+    INSERT INTO vendor_profiles
+      (uei, name, slug, total_micro_purchase_amount, total_transactions, agency_count,
+       top_agency_name, top_psc_category, first_seen, last_seen, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  for (let i = 0; i < rows.results.length; i += 100) {
+    const chunk = rows.results.slice(i, i + 100);
+    const statements = chunk.map((row) => {
+      const slug = toSlug(row.recipient_name);
+      return stmt.bind(
+        row.recipient_uei, row.recipient_name, slug,
+        row.total_amount, row.transaction_count, row.agency_count,
+        row.top_agency_name ?? null, row.top_psc_category ?? null,
+        row.first_seen ?? null, row.last_seen ?? null, now
+      );
+    });
+    await env.DB.batch(statements);
   }
 }

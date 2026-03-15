@@ -179,28 +179,28 @@ async function backfillMonth(year, month, agencyMap) {
   while (hasMore) {
     let data;
     try {
-      data = await usaPost('/api/v2/search/spending_by_award/', {
+      data = await usaPost('/api/v2/search/spending_by_transaction/', {
         filters: {
           award_type_codes: ['A', 'B', 'C', 'D'],
           award_amounts: [{ lower_bound: 0, upper_bound: 10000 }],
           time_period: [{ start_date: start, end_date: endStr }],
         },
         fields: [
-          'Award ID',
+          'internal_id',
           'Recipient Name',
-          'recipient_uei',
-          'Award Amount',
+          'Recipient UEI',
+          'Transaction Amount',
           'Action Date',
-          'Award Description',
+          'Transaction Description',
           'awarding_agency_id',
           'naics_code',
-          'Product or Service Code',
-          'Place of Performance State Code',
-          'Place of Performance City Name',
+          'product_or_service_code',
+          'pop_state_code',
+          'pop_city_name',
         ],
         limit: PAGE_SIZE,
         page,
-        sort: 'Award Amount',
+        sort: 'Action Date',
         order: 'desc',
       });
     } catch (err) {
@@ -211,27 +211,26 @@ async function backfillMonth(year, month, agencyMap) {
     const results = data.results ?? [];
     if (results.length === 0) break;
 
-    const rows = results.map((award) => {
-      const toptierCode = award.awarding_agency_id ? agencyMap.get(award.awarding_agency_id) : null;
-      const actionDate = award['Action Date'] ?? null;
+    const rows = results.map((tx) => {
+      const toptierCode = tx.awarding_agency_id ? agencyMap.get(tx.awarding_agency_id) : null;
+      const actionDate = tx['Action Date'] ?? null;
       const fiscalYear = actionDate ? fiscalYearFromDate(actionDate) : null;
       return {
-        award_id: String(award.internal_id),
+        award_id: String(tx.internal_id),
         toptier_code: toptierCode ?? null,
-        psc_code: award['Product or Service Code'] ?? null,
-        naics_code: award.naics_code ?? null,
-        recipient_name: award['Recipient Name'] ?? null,
-        recipient_uei: award.recipient_uei ?? null,
-        amount: award['Award Amount'],
+        psc_code: tx.product_or_service_code ?? null,
+        naics_code: tx.naics_code ?? null,
+        recipient_name: tx['Recipient Name'] ?? null,
+        recipient_uei: tx['Recipient UEI'] ?? null,
+        amount: tx['Transaction Amount'],
         action_date: actionDate,
         fiscal_year: fiscalYear,
-        description: award['Award Description'] ?? null,
-        place_state: award['Place of Performance State Code'] ?? null,
-        place_city: award['Place of Performance City Name'] ?? null,
+        description: tx['Transaction Description'] ?? null,
+        place_state: tx.pop_state_code ?? null,
+        place_city: tx.pop_city_name ?? null,
       };
     });
 
-    // Use bulk-insert endpoint (D1 batch) for speed; falls back to load-transactions
     const result = await workerPost('/admin/bulk-insert-transactions', { rows });
     totalInserted += result.inserted ?? 0;
 
