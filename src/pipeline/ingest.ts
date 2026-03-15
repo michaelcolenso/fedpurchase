@@ -41,23 +41,33 @@ interface SpendingByAwardResponse {
 }
 
 /**
- * Ingest recent micro-purchase transactions from USASpending.gov.
- * @param env Worker environment bindings
- * @param daysBack Number of days to look back (default 7)
+ * Derive US federal fiscal year from a date string (YYYY-MM-DD).
+ * FY starts Oct 1; e.g. 2023-11-01 → FY2024, 2024-03-15 → FY2024.
  */
-export async function ingestRecentTransactions(env: Env, daysBack = 7): Promise<number> {
+function fiscalYearFromDate(dateStr: string): number {
+  const d = new Date(dateStr + 'T00:00:00Z');
+  const month = d.getUTCMonth() + 1;
+  const year = d.getUTCFullYear();
+  return month >= 10 ? year + 1 : year;
+}
+
+/**
+ * Core ingest logic for a specific date range. Returns number of new records inserted.
+ */
+export async function ingestDateRange(
+  env: Env,
+  startDate: Date,
+  endDate: Date,
+  agencyByToptierId?: Map<number, number>
+): Promise<number> {
   const db = drizzle(env.DB);
-
-  const endDate = new Date();
-  const startDate = new Date();
-  startDate.setDate(startDate.getDate() - daysBack);
-
   const formatDate = (d: Date) => d.toISOString().split('T')[0];
-  const fiscalYear = currentFiscalYear();
 
-  // Build agency slug lookup cache
-  const agencyRows = await db.select({ id: agencies.id, toptierId: agencies.toptierId }).from(agencies).all();
-  const agencyByToptierId = new Map(agencyRows.map((a) => [a.toptierId, a.id]));
+  // Build agency lookup if not provided
+  if (!agencyByToptierId) {
+    const agencyRows = await db.select({ id: agencies.id, toptierId: agencies.toptierId }).from(agencies).all();
+    agencyByToptierId = new Map(agencyRows.map((a) => [a.toptierId, a.id]));
+  }
 
   let page = 1;
   let totalIngested = 0;
@@ -105,6 +115,7 @@ export async function ingestRecentTransactions(env: Env, daysBack = 7): Promise<
 
     for (const award of results) {
       const agencyId = agencyByToptierId.get(award.awarding_agency_id) ?? null;
+      const fiscalYear = award.action_date ? fiscalYearFromDate(award.action_date) : currentFiscalYear();
 
       // Upsert: skip if award_id already exists
       const existing = await db
@@ -141,4 +152,16 @@ export async function ingestRecentTransactions(env: Env, daysBack = 7): Promise<
   }
 
   return totalIngested;
+}
+
+/**
+ * Ingest recent micro-purchase transactions from USASpending.gov.
+ * @param env Worker environment bindings
+ * @param daysBack Number of days to look back (default 7)
+ */
+export async function ingestRecentTransactions(env: Env, daysBack = 7): Promise<number> {
+  const endDate = new Date();
+  const startDate = new Date();
+  startDate.setDate(startDate.getDate() - daysBack);
+  return ingestDateRange(env, startDate, endDate);
 }
