@@ -231,7 +231,8 @@ async function backfillMonth(year, month, agencyMap) {
       };
     });
 
-    const result = await workerPost('/admin/load-transactions', { rows });
+    // Use bulk-insert endpoint (D1 batch) for speed; falls back to load-transactions
+    const result = await workerPost('/admin/bulk-insert-transactions', { rows });
     totalInserted += result.inserted ?? 0;
 
     hasMore = data.page_metadata?.hasNext && results.length === PAGE_SIZE;

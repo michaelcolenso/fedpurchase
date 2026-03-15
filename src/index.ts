@@ -216,6 +216,69 @@ app.post('/admin/backfill', async (c) => {
   }
 });
 
+// Admin: fast bulk insert transactions using D1 batch API + INSERT OR IGNORE
+// Requires unique index on award_id (created by /admin/migrate-unique-award-id).
+app.post('/admin/bulk-insert-transactions', async (c) => {
+  const authHeader = c.req.header('Authorization');
+  const adminSecret = (c.env as unknown as { ADMIN_SECRET?: string }).ADMIN_SECRET;
+  if (adminSecret && authHeader !== `Bearer ${adminSecret}`) return c.json({ error: 'Unauthorized' }, 401);
+
+  try {
+    const body = await c.req.json() as { rows: Record<string, unknown>[] };
+    if (!Array.isArray(body.rows) || body.rows.length === 0) return c.json({ ok: true, inserted: 0 });
+
+    // Build agency lookup once for this batch
+    const agencyRows = await c.env.DB.prepare('SELECT id, toptier_code FROM agencies WHERE toptier_code IS NOT NULL').all<{ id: number; toptier_code: string }>();
+    const agencyByCode = new Map(agencyRows.results.map((a) => [a.toptier_code, a.id]));
+
+    const stmt = c.env.DB.prepare(
+      `INSERT OR IGNORE INTO micro_purchases
+        (award_id, agency_id, psc_code, naics_code, recipient_name, recipient_uei, amount, action_date, fiscal_year, description, place_state, place_city)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    );
+
+    const statements = body.rows.map((row) => {
+      const agencyId = row.toptier_code ? (agencyByCode.get(row.toptier_code as string) ?? null) : null;
+      return stmt.bind(
+        row.award_id ?? null,
+        agencyId,
+        row.psc_code ?? null,
+        row.naics_code ?? null,
+        row.recipient_name ?? null,
+        row.recipient_uei ?? null,
+        row.amount,
+        row.action_date ?? null,
+        row.fiscal_year ?? null,
+        row.description ?? null,
+        row.place_state ?? null,
+        row.place_city ?? null
+      );
+    });
+
+    // Execute all inserts in a single D1 batch round-trip
+    const results = await c.env.DB.batch(statements);
+    const inserted = results.reduce((sum, r) => sum + (r.meta?.changes ?? 0), 0);
+    return c.json({ ok: true, inserted });
+  } catch (err) {
+    console.error('Bulk insert error:', err);
+    return c.json({ error: String(err) }, 500);
+  }
+});
+
+// Admin: add unique index on micro_purchases.award_id to enable INSERT OR IGNORE
+app.post('/admin/migrate-unique-award-id', async (c) => {
+  const authHeader = c.req.header('Authorization');
+  const adminSecret = (c.env as unknown as { ADMIN_SECRET?: string }).ADMIN_SECRET;
+  if (adminSecret && authHeader !== `Bearer ${adminSecret}`) return c.json({ error: 'Unauthorized' }, 401);
+
+  try {
+    await c.env.DB.prepare('CREATE UNIQUE INDEX IF NOT EXISTS idx_micro_purchase_award_id ON micro_purchases (award_id)').run();
+    return c.json({ ok: true });
+  } catch (err) {
+    return c.json({ error: String(err) }, 500);
+  }
+});
+
 // Admin: debug endpoint to test USASpending API connectivity from the Worker
 app.get('/admin/debug-api', async (c) => {
   const authHeader = c.req.header('Authorization');
