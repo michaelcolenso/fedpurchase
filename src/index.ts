@@ -216,6 +216,58 @@ app.post('/admin/backfill', async (c) => {
   }
 });
 
+// Admin: debug endpoint to test USASpending API connectivity from the Worker
+app.get('/admin/debug-api', async (c) => {
+  const authHeader = c.req.header('Authorization');
+  const adminSecret = (c.env as unknown as { ADMIN_SECRET?: string }).ADMIN_SECRET;
+  if (adminSecret && authHeader !== `Bearer ${adminSecret}`) return c.json({ error: 'Unauthorized' }, 401);
+
+  try {
+    // Test simple GET first
+    const resp = await fetch('https://api.usaspending.gov/api/v2/agency/', {
+      headers: { 'User-Agent': 'fedpurchase/1.0' },
+    });
+    const text = await resp.text();
+    return c.json({ status: resp.status, ok: resp.ok, bodyPreview: text.slice(0, 500) });
+  } catch (err) {
+    return c.json({ error: String(err) });
+  }
+});
+
+// Admin: backfill a single calendar month (avoids Worker wall-clock timeout)
+app.post('/admin/backfill-month', async (c) => {
+  const authHeader = c.req.header('Authorization');
+  const adminSecret = (c.env as unknown as { ADMIN_SECRET?: string }).ADMIN_SECRET;
+
+  if (adminSecret && authHeader !== `Bearer ${adminSecret}`) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
+
+  try {
+    const body = await c.req.json() as { year: number; month: number };
+    const { year, month } = body;
+
+    if (!year || !month || month < 1 || month > 12) {
+      return c.json({ error: 'year and month (1-12) are required' }, 400);
+    }
+
+    // Build date range for the calendar month
+    const startDate = new Date(`${year}-${String(month).padStart(2, '0')}-01T00:00:00Z`);
+    const endDate = new Date(startDate);
+    endDate.setUTCMonth(endDate.getUTCMonth() + 1);
+    endDate.setUTCDate(endDate.getUTCDate() - 1);
+    endDate.setUTCHours(23, 59, 59, 999);
+
+    const { ingestDateRange } = await import('./pipeline/ingest');
+    const inserted = await ingestDateRange(c.env, startDate, endDate);
+
+    return c.json({ ok: true, year, month, inserted });
+  } catch (err) {
+    console.error('Backfill-month error:', err);
+    return c.json({ error: String(err) }, 500);
+  }
+});
+
 // Admin: trigger manual ingest
 app.post('/admin/ingest', async (c) => {
   const authHeader = c.req.header('Authorization');

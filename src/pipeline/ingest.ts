@@ -15,16 +15,16 @@ function sleep(ms: number): Promise<void> {
 
 interface AwardResult {
   internal_id: string;
-  recipient_name: string;
+  'Recipient Name': string;
   recipient_uei: string;
-  award_amount: number;
-  action_date: string;
-  description: string | null;
-  awarding_agency_id: number;
+  'Award Amount': number;
+  'Action Date': string | null;
+  'Award Description': string | null;
+  awarding_agency_id: number | null;
   naics_code: string | null;
-  psc_code: string | null;
-  place_of_performance_state_code: string | null;
-  place_of_performance_city_name: string | null;
+  'Product or Service Code': string | null;
+  'Place of Performance State Code': string | null;
+  'Place of Performance City Name': string | null;
 }
 
 interface SpendingByAwardResponse {
@@ -95,7 +95,7 @@ export async function ingestDateRange(
       ],
       limit: PAGE_SIZE,
       page,
-      sort: 'Action Date',
+      sort: 'Award Amount',
       order: 'desc',
     };
 
@@ -114,30 +114,31 @@ export async function ingestDateRange(
     const results = data.results;
 
     for (const award of results) {
-      const agencyId = agencyByToptierId.get(award.awarding_agency_id) ?? null;
-      const fiscalYear = award.action_date ? fiscalYearFromDate(award.action_date) : currentFiscalYear();
+      const agencyId = award.awarding_agency_id ? (agencyByToptierId.get(award.awarding_agency_id) ?? null) : null;
+      const actionDate = award['Action Date'];
+      const fiscalYear = actionDate ? fiscalYearFromDate(actionDate) : currentFiscalYear();
 
       // Upsert: skip if award_id already exists
       const existing = await db
         .select({ id: microPurchases.id })
         .from(microPurchases)
-        .where(eq(microPurchases.awardId, award.internal_id))
+        .where(eq(microPurchases.awardId, String(award.internal_id)))
         .get();
 
       if (!existing) {
         await db.insert(microPurchases).values({
-          awardId: award.internal_id,
+          awardId: String(award.internal_id),
           agencyId,
-          pscCode: award.psc_code,
+          pscCode: award['Product or Service Code'],
           naicsCode: award.naics_code,
-          recipientName: award.recipient_name,
+          recipientName: award['Recipient Name'],
           recipientUei: award.recipient_uei,
-          amount: award.award_amount,
-          actionDate: award.action_date,
+          amount: award['Award Amount'],
+          actionDate,
           fiscalYear,
-          description: award.description,
-          placeState: award.place_of_performance_state_code,
-          placeCity: award.place_of_performance_city_name,
+          description: award['Award Description'],
+          placeState: award['Place of Performance State Code'],
+          placeCity: award['Place of Performance City Name'],
         });
         totalIngested++;
       }
