@@ -70,17 +70,24 @@ async function usaGet(path) {
   return resp.json();
 }
 
-async function usaPost(path, body) {
-  const resp = await proxiedFetch(`${USA_SPENDING}${path}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'User-Agent': 'fedpurchase-local-ingest/1.0' },
-    body: JSON.stringify(body),
-  });
-  if (!resp.ok) {
+async function usaPost(path, body, retries = 4) {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const resp = await proxiedFetch(`${USA_SPENDING}${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'User-Agent': 'fedpurchase-local-ingest/1.0' },
+      body: JSON.stringify(body),
+    });
+    if (resp.ok) return resp.json();
+    if (resp.status === 429 || resp.status >= 500) {
+      if (attempt < retries) {
+        const delay = 2000 * Math.pow(2, attempt); // 2s, 4s, 8s, 16s
+        await sleep(delay);
+        continue;
+      }
+    }
     const txt = await resp.text();
     throw new Error(`POST ${path} → ${resp.status}: ${txt.slice(0, 200)}`);
   }
-  return resp.json();
 }
 
 // ── Reference data ────────────────────────────────────────────────────────────

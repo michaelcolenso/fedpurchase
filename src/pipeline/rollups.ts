@@ -221,10 +221,18 @@ async function recomputeVendorProfiles(env: Env): Promise<void> {
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
+  // Track all slugs across chunks to prevent UNIQUE constraint violations
+  const seenSlugs = new Set<string>();
+
   for (let i = 0; i < rows.results.length; i += 100) {
     const chunk = rows.results.slice(i, i + 100);
     const statements = chunk.map((row) => {
-      const slug = toSlug(row.recipient_name);
+      let slug = toSlug(row.recipient_name);
+      // Append UEI suffix if slug collides with another vendor
+      if (seenSlugs.has(slug)) {
+        slug = `${slug}-${row.recipient_uei.slice(-8).toLowerCase()}`;
+      }
+      seenSlugs.add(slug);
       return stmt.bind(
         row.recipient_uei, row.recipient_name, slug,
         row.total_amount, row.transaction_count, row.agency_count,
