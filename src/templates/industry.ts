@@ -1,4 +1,4 @@
-import { layout, escapeHtml } from './layout';
+import { layout, escapeHtml, statCard, breadcrumb, inlineBar } from './layout';
 import { formatCurrency, formatNumber } from '../lib/format';
 
 export interface IndustryAgencyRow {
@@ -42,84 +42,105 @@ export function renderIndustryPage(data: IndustryPageData): string {
     ? `/industry/${naicsCode}/${agencySlug}`
     : `/industry/${naicsCode}`;
 
+  const maxAgencyAmount = Math.max(...agencyBreakdown.map((a) => a.totalAmount), 1);
+  const maxVendorAmount = Math.max(...topVendors.map((v) => v.totalAmount), 1);
+
   const agencyTable = agencyBreakdown.length > 0 ? `
-    <h2 class="text-xl font-semibold mt-8 mb-3">Agency Breakdown</h2>
-    <div class="overflow-x-auto">
-      <table class="w-full text-sm border border-gray-200 rounded">
-        <thead class="bg-gray-100">
+    <h2 class="text-lg font-semibold mt-8 mb-3">Agency Breakdown</h2>
+    <div class="bg-white border border-gray-200 rounded-lg overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead class="bg-gray-50 border-b border-gray-200">
           <tr>
-            <th class="text-left p-3">Agency</th>
-            <th class="text-right p-3">Total Spend</th>
-            <th class="text-right p-3">Transactions</th>
-            <th class="text-right p-3">Vendors</th>
+            <th class="text-left px-4 py-3 font-medium text-gray-600">Agency</th>
+            <th class="text-right px-4 py-3 font-medium text-gray-600">Total Spend</th>
+            <th class="text-right px-4 py-3 font-medium text-gray-600">Transactions</th>
+            <th class="text-right px-4 py-3 font-medium text-gray-600">Vendors</th>
           </tr>
         </thead>
         <tbody>
           ${agencyBreakdown.map((a, i) => `
-          <tr class="${i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}">
-            <td class="p-3">
-              <a href="/industry/${naicsCode}/${a.agencySlug}" class="text-blue-600 hover:underline">${escapeHtml(a.agencyName)}</a>
+          <tr class="${i % 2 === 0 ? 'bg-white' : 'bg-gray-50'} hover:bg-blue-50 transition-colors">
+            <td class="px-4 py-3">
+              <a href="/industry/${naicsCode}/${a.agencySlug}" class="font-medium text-blue-700 hover:underline">${escapeHtml(a.agencyName)}</a>
             </td>
-            <td class="p-3 text-right">${formatCurrency(a.totalAmount)}</td>
-            <td class="p-3 text-right">${formatNumber(a.transactionCount)}</td>
-            <td class="p-3 text-right">${formatNumber(a.uniqueVendors)}</td>
+            <td class="px-4 py-3 text-right">
+              <div class="flex items-center justify-end gap-2">
+                ${inlineBar(a.totalAmount, maxAgencyAmount)}
+                <span>${formatCurrency(a.totalAmount)}</span>
+              </div>
+            </td>
+            <td class="px-4 py-3 text-right text-gray-600">${formatNumber(a.transactionCount)}</td>
+            <td class="px-4 py-3 text-right text-gray-600">${formatNumber(a.uniqueVendors)}</td>
           </tr>`).join('')}
         </tbody>
       </table>
     </div>` : '';
 
   const vendorsTable = topVendors.length > 0 ? `
-    <h2 class="text-xl font-semibold mt-8 mb-3">Top Vendors</h2>
-    <div class="overflow-x-auto">
-      <table class="w-full text-sm border border-gray-200 rounded">
-        <thead class="bg-gray-100">
+    <h2 class="text-lg font-semibold mt-8 mb-3">Top Vendors</h2>
+    <div class="bg-white border border-gray-200 rounded-lg overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead class="bg-gray-50 border-b border-gray-200">
           <tr>
-            <th class="text-left p-3">Vendor</th>
-            <th class="text-right p-3">Total Amount</th>
-            <th class="text-right p-3">Transactions</th>
+            <th class="text-left px-4 py-3 font-medium text-gray-600">Vendor</th>
+            <th class="text-right px-4 py-3 font-medium text-gray-600">Total Amount</th>
+            <th class="text-right px-4 py-3 font-medium text-gray-600">Transactions</th>
           </tr>
         </thead>
         <tbody>
           ${topVendors.map((v, i) => `
-          <tr class="${i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}">
-            <td class="p-3 font-medium">${escapeHtml(v.name)}</td>
-            <td class="p-3 text-right">${formatCurrency(v.totalAmount)}</td>
-            <td class="p-3 text-right">${formatNumber(v.transactionCount)}</td>
+          <tr class="${i % 2 === 0 ? 'bg-white' : 'bg-gray-50'} hover:bg-blue-50 transition-colors">
+            <td class="px-4 py-3 font-medium text-gray-900">${escapeHtml(v.name)}</td>
+            <td class="px-4 py-3 text-right">
+              <div class="flex items-center justify-end gap-2">
+                ${inlineBar(v.totalAmount, maxVendorAmount)}
+                <span>${formatCurrency(v.totalAmount)}</span>
+              </div>
+            </td>
+            <td class="px-4 py-3 text-right text-gray-600">${formatNumber(v.transactionCount)}</td>
           </tr>`).join('')}
         </tbody>
       </table>
     </div>` : '';
 
   const relatedSection = relatedNaics.length > 0 ? `
-    <h2 class="text-xl font-semibold mt-8 mb-3">Related Industries</h2>
+    <h2 class="text-lg font-semibold mt-8 mb-3">Related Industries</h2>
     <div class="flex flex-wrap gap-2">
       ${relatedNaics.map((n) =>
-        `<a href="/industry/${n.code}" class="px-3 py-1 bg-gray-100 rounded text-sm hover:bg-gray-200">${escapeHtml(n.code)}: ${escapeHtml(n.description)}</a>`
+        `<a href="/industry/${n.code}" class="px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-sm hover:border-blue-400 hover:text-blue-700 transition-colors">
+          <span class="font-mono text-gray-500 text-xs">${escapeHtml(n.code)}</span>
+          <span class="ml-1">${escapeHtml(n.description)}</span>
+        </a>`
       ).join('')}
     </div>` : '';
 
+  const crumbs = agencySlug
+    ? [
+        { label: 'Home', href: '/' },
+        { label: 'Industries', href: '/industry' },
+        { label: `NAICS ${naicsCode}`, href: `/industry/${naicsCode}` },
+        { label: agencyName ?? '' },
+      ]
+    : [
+        { label: 'Home', href: '/' },
+        { label: 'Industries', href: '/industry' },
+        { label: `NAICS ${naicsCode}` },
+      ];
+
   const body = `
-    <nav class="text-sm text-gray-500 mb-4">
-      <a href="/" class="hover:text-blue-700">Home</a> /
-      <a href="/industry" class="hover:text-blue-700">Industries</a> /
-      ${agencySlug ? `<a href="/industry/${naicsCode}" class="hover:text-blue-700">NAICS ${naicsCode}</a> / <span>${escapeHtml(agencyName ?? '')}</span>` : `<span>NAICS ${naicsCode}</span>`}
-    </nav>
+    ${breadcrumb(crumbs)}
 
-    <h1 class="text-2xl md:text-3xl font-bold mb-1">
-      NAICS ${escapeHtml(naicsCode)}: ${escapeHtml(naicsDescription)}
-      ${agencyName ? ` — ${escapeHtml(agencyName)}` : ''}
-    </h1>
-    ${sectorName ? `<p class="text-gray-500 mb-4">Sector: ${escapeHtml(sectorName)}</p>` : ''}
+    <div class="mb-6">
+      <h1 class="text-2xl md:text-3xl font-bold text-gray-900">
+        NAICS ${escapeHtml(naicsCode)}: ${escapeHtml(naicsDescription)}
+        ${agencyName ? `<span class="text-gray-400 font-normal">— ${escapeHtml(agencyName)}</span>` : ''}
+      </h1>
+      ${sectorName ? `<p class="text-sm text-gray-500 mt-1">Sector: ${escapeHtml(sectorName)}</p>` : ''}
+    </div>
 
-    <div class="grid grid-cols-2 gap-4 my-6">
-      <div class="bg-white border border-gray-200 rounded p-4 text-center">
-        <div class="text-xs text-gray-500 uppercase tracking-wide mb-1">Total Spend (FY${fiscalYear})</div>
-        <div class="text-2xl font-bold">${formatCurrency(totalAmount)}</div>
-      </div>
-      <div class="bg-white border border-gray-200 rounded p-4 text-center">
-        <div class="text-xs text-gray-500 uppercase tracking-wide mb-1">Transactions</div>
-        <div class="text-2xl font-bold">${formatNumber(transactionCount)}</div>
-      </div>
+    <div class="grid grid-cols-2 gap-4 mb-8">
+      ${statCard('Total Spend', formatCurrency(totalAmount), `FY${fiscalYear}`)}
+      ${statCard('Transactions', formatNumber(transactionCount), 'micro-purchases')}
     </div>
 
     ${agencyTable}

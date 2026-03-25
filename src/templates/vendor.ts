@@ -1,4 +1,4 @@
-import { layout, escapeHtml } from './layout';
+import { layout, escapeHtml, statCard, breadcrumb, inlineBar } from './layout';
 import { formatCurrency, formatNumber, formatDate } from '../lib/format';
 
 export interface VendorAgencyRow {
@@ -37,87 +37,87 @@ export function renderVendorPage(data: VendorPageData): string {
   const title = `${vendorName} — Federal Micro-Purchase Profile`;
   const description = `${vendorName} (UEI: ${uei}) has received ${formatCurrency(totalAmount)} across ${formatNumber(totalTransactions)} federal micro-purchase transactions from ${agencyCount} agencies.`;
 
+  const maxAgencyAmount = Math.max(...agencyBreakdown.map((a) => a.totalAmount), 1);
+
+  const activeRange = firstSeen && lastSeen
+    ? `${formatDate(firstSeen)} – ${formatDate(lastSeen)}`
+    : firstSeen ? `Since ${formatDate(firstSeen)}` : null;
+
   const agencyTable = agencyBreakdown.length > 0 ? `
-    <h2 class="text-xl font-semibold mt-8 mb-3">Agency Customers</h2>
-    <div class="overflow-x-auto">
-      <table class="w-full text-sm border border-gray-200 rounded">
-        <thead class="bg-gray-100">
+    <h2 class="text-lg font-semibold mt-8 mb-3">Agency Customers</h2>
+    <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
+      <table class="w-full text-sm">
+        <thead class="bg-gray-50 border-b border-gray-200">
           <tr>
-            <th class="text-left p-3">Agency</th>
-            <th class="text-right p-3">Total Amount</th>
-            <th class="text-right p-3">Transactions</th>
+            <th class="text-left px-4 py-3 font-medium text-gray-600">Agency</th>
+            <th class="text-right px-4 py-3 font-medium text-gray-600">Total Amount</th>
+            <th class="text-right px-4 py-3 font-medium text-gray-600">Transactions</th>
           </tr>
         </thead>
         <tbody>
           ${agencyBreakdown.map((a, i) => `
-          <tr class="${i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}">
-            <td class="p-3">
-              <a href="/agency/${a.agencySlug}" class="text-blue-600 hover:underline">${escapeHtml(a.agencyName)}</a>
+          <tr class="${i % 2 === 0 ? 'bg-white' : 'bg-gray-50'} hover:bg-blue-50 transition-colors">
+            <td class="px-4 py-3">
+              <a href="/agency/${a.agencySlug}" class="font-medium text-blue-700 hover:underline">${escapeHtml(a.agencyName)}</a>
             </td>
-            <td class="p-3 text-right">${formatCurrency(a.totalAmount)}</td>
-            <td class="p-3 text-right">${formatNumber(a.transactionCount)}</td>
+            <td class="px-4 py-3 text-right">
+              <div class="flex items-center justify-end gap-2">
+                ${inlineBar(a.totalAmount, maxAgencyAmount)}
+                <span>${formatCurrency(a.totalAmount)}</span>
+              </div>
+            </td>
+            <td class="px-4 py-3 text-right text-gray-600">${formatNumber(a.transactionCount)}</td>
           </tr>`).join('')}
         </tbody>
       </table>
     </div>` : '';
 
   const recentTable = recentTransactions.length > 0 ? `
-    <h2 class="text-xl font-semibold mt-8 mb-3">Recent Transactions</h2>
-    <div class="overflow-x-auto">
-      <table class="w-full text-sm border border-gray-200 rounded">
-        <thead class="bg-gray-100">
+    <h2 class="text-lg font-semibold mt-8 mb-3">Recent Transactions</h2>
+    <div class="bg-white border border-gray-200 rounded-lg overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead class="bg-gray-50 border-b border-gray-200">
           <tr>
-            <th class="text-left p-3">Date</th>
-            <th class="text-right p-3">Amount</th>
-            <th class="text-left p-3">Agency</th>
-            <th class="text-left p-3">Description</th>
+            <th class="text-left px-4 py-3 font-medium text-gray-600">Date</th>
+            <th class="text-right px-4 py-3 font-medium text-gray-600">Amount</th>
+            <th class="text-left px-4 py-3 font-medium text-gray-600">Agency</th>
+            <th class="text-left px-4 py-3 font-medium text-gray-600">Description</th>
           </tr>
         </thead>
         <tbody>
           ${recentTransactions.map((t, i) => `
           <tr class="${i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}">
-            <td class="p-3 whitespace-nowrap">${escapeHtml(formatDate(t.actionDate))}</td>
-            <td class="p-3 text-right whitespace-nowrap">${formatCurrency(t.amount)}</td>
-            <td class="p-3">${escapeHtml(t.agencyName ?? '—')}</td>
-            <td class="p-3 text-gray-600">${escapeHtml(t.description ?? '—')}</td>
+            <td class="px-4 py-3 whitespace-nowrap text-gray-600">${escapeHtml(formatDate(t.actionDate))}</td>
+            <td class="px-4 py-3 text-right font-medium whitespace-nowrap">${formatCurrency(t.amount)}</td>
+            <td class="px-4 py-3 text-gray-700">${escapeHtml(t.agencyName ?? '—')}</td>
+            <td class="px-4 py-3 text-gray-500 text-xs">${escapeHtml(t.description ?? '—')}</td>
           </tr>`).join('')}
         </tbody>
       </table>
     </div>` : '';
 
   const body = `
-    <nav class="text-sm text-gray-500 mb-4">
-      <a href="/" class="hover:text-blue-700">Home</a> /
-      <a href="/vendor" class="hover:text-blue-700">Vendors</a> /
-      <span>${escapeHtml(vendorName)}</span>
-    </nav>
+    ${breadcrumb([
+      { label: 'Home', href: '/' },
+      { label: 'Vendors', href: '/vendor' },
+      { label: vendorName },
+    ])}
 
-    <h1 class="text-2xl md:text-3xl font-bold mb-1">${escapeHtml(vendorName)}</h1>
-    <p class="text-sm text-gray-500 mb-4">UEI: ${escapeHtml(uei)}</p>
-
-    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 my-6">
-      <div class="bg-white border border-gray-200 rounded p-4 text-center">
-        <div class="text-xs text-gray-500 uppercase tracking-wide mb-1">Total Received</div>
-        <div class="text-xl font-bold">${formatCurrency(totalAmount)}</div>
-      </div>
-      <div class="bg-white border border-gray-200 rounded p-4 text-center">
-        <div class="text-xs text-gray-500 uppercase tracking-wide mb-1">Transactions</div>
-        <div class="text-xl font-bold">${formatNumber(totalTransactions)}</div>
-      </div>
-      <div class="bg-white border border-gray-200 rounded p-4 text-center">
-        <div class="text-xs text-gray-500 uppercase tracking-wide mb-1">Agencies</div>
-        <div class="text-xl font-bold">${agencyCount}</div>
-      </div>
-      <div class="bg-white border border-gray-200 rounded p-4 text-center">
-        <div class="text-xs text-gray-500 uppercase tracking-wide mb-1">Top Category</div>
-        <div class="text-sm font-semibold">${escapeHtml(topPscCategory ?? '—')}</div>
+    <div class="mb-6">
+      <h1 class="text-2xl md:text-3xl font-bold text-gray-900">${escapeHtml(vendorName)}</h1>
+      <div class="flex flex-wrap items-center gap-3 mt-1.5">
+        <span class="text-xs text-gray-500 font-mono bg-gray-100 px-2 py-0.5 rounded">UEI: ${escapeHtml(uei)}</span>
+        ${activeRange ? `<span class="text-xs text-gray-500">Active: ${escapeHtml(activeRange)}</span>` : ''}
+        ${topPscCategory ? `<span class="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded font-medium">${escapeHtml(topPscCategory)}</span>` : ''}
       </div>
     </div>
 
-    ${firstSeen || lastSeen ? `
-    <p class="text-sm text-gray-600 mb-4">
-      Active: ${escapeHtml(formatDate(firstSeen))} – ${escapeHtml(formatDate(lastSeen))}
-    </p>` : ''}
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+      ${statCard('Total Received', formatCurrency(totalAmount))}
+      ${statCard('Transactions', formatNumber(totalTransactions))}
+      ${statCard('Agencies', String(agencyCount))}
+      ${statCard('Top Category', topPscCategory ?? '—')}
+    </div>
 
     ${agencyTable}
     ${recentTable}`;
