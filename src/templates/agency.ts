@@ -1,4 +1,4 @@
-import { layout, escapeHtml } from './layout';
+import { layout, escapeHtml, statCard, breadcrumb, inlineBar } from './layout';
 import { formatCurrency, formatNumber } from '../lib/format';
 
 export interface AgencyCategory {
@@ -26,60 +26,82 @@ export function renderAgencyPage(data: AgencyPageData): string {
   const title = `${displayName} Micro-Purchase Spending — GovPurchase Intel`;
   const description = `FY${fiscalYear}: ${displayName} made ${formatNumber(transactionCount)} micro-purchase transactions totaling ${formatCurrency(totalAmount)}. Top product categories and vendors.`;
 
+  const maxCatAmount = Math.max(...topCategories.map((c) => c.totalAmount), 1);
+  const maxVendorAmount = Math.max(...topVendors.map((v) => v.totalAmount), 1);
+
   const categoriesSection = topCategories.length > 0 ? `
-    <h2 class="text-xl font-semibold mt-8 mb-3">Top Product Categories</h2>
-    <div class="grid md:grid-cols-2 gap-3">
-      ${topCategories.map((c) => `
-      <a href="/agency/${agencySlug}/${c.categorySlug}"
-         class="block bg-white border border-gray-200 rounded p-4 hover:border-blue-400 transition">
-        <div class="font-medium">${escapeHtml(c.categoryName ?? c.categorySlug)}</div>
-        <div class="text-sm text-gray-600 mt-1">
-          ${formatCurrency(c.totalAmount)} · ${formatNumber(c.transactionCount)} transactions
-        </div>
-      </a>`).join('')}
-    </div>` : '<p class="text-gray-500 mt-4">No category data available yet.</p>';
+    <h2 class="text-lg font-semibold mt-8 mb-3">Top Product Categories</h2>
+    <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
+      <table class="w-full text-sm">
+        <thead class="bg-gray-50 border-b border-gray-200">
+          <tr>
+            <th class="text-left px-4 py-3 font-medium text-gray-600">Category</th>
+            <th class="text-right px-4 py-3 font-medium text-gray-600">Spend</th>
+            <th class="text-right px-4 py-3 font-medium text-gray-600">Transactions</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${topCategories.map((c, i) => `
+          <tr class="${i % 2 === 0 ? 'bg-white' : 'bg-gray-50'} hover:bg-blue-50 transition-colors">
+            <td class="px-4 py-3">
+              <a href="/agency/${agencySlug}/${c.categorySlug}" class="font-medium text-blue-700 hover:underline">
+                ${escapeHtml(c.categoryName ?? c.categorySlug)}
+              </a>
+            </td>
+            <td class="px-4 py-3 text-right">
+              <div class="flex items-center justify-end gap-2">
+                ${inlineBar(c.totalAmount, maxCatAmount)}
+                <span>${formatCurrency(c.totalAmount)}</span>
+              </div>
+            </td>
+            <td class="px-4 py-3 text-right text-gray-600">${formatNumber(c.transactionCount)}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>` : `<p class="text-gray-500 mt-4 text-sm">No category data available yet.</p>`;
 
   const vendorsSection = topVendors.length > 0 ? `
-    <h2 class="text-xl font-semibold mt-8 mb-3">Top Vendors</h2>
-    <div class="overflow-x-auto">
-      <table class="w-full text-sm border border-gray-200 rounded">
-        <thead class="bg-gray-100">
+    <h2 class="text-lg font-semibold mt-8 mb-3">Top Vendors</h2>
+    <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
+      <table class="w-full text-sm">
+        <thead class="bg-gray-50 border-b border-gray-200">
           <tr>
-            <th class="text-left p-3">Vendor</th>
-            <th class="text-right p-3">Total Amount</th>
-            <th class="text-right p-3">Transactions</th>
+            <th class="text-left px-4 py-3 font-medium text-gray-600">Vendor</th>
+            <th class="text-right px-4 py-3 font-medium text-gray-600">Total Amount</th>
+            <th class="text-right px-4 py-3 font-medium text-gray-600">Transactions</th>
           </tr>
         </thead>
         <tbody>
           ${topVendors.map((v, i) => `
-          <tr class="${i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}">
-            <td class="p-3 font-medium">${escapeHtml(v.name)}</td>
-            <td class="p-3 text-right">${formatCurrency(v.totalAmount)}</td>
-            <td class="p-3 text-right">${formatNumber(v.transactionCount)}</td>
+          <tr class="${i % 2 === 0 ? 'bg-white' : 'bg-gray-50'} hover:bg-blue-50 transition-colors">
+            <td class="px-4 py-3 font-medium text-gray-900">${escapeHtml(v.name)}</td>
+            <td class="px-4 py-3 text-right">
+              <div class="flex items-center justify-end gap-2">
+                ${inlineBar(v.totalAmount, maxVendorAmount)}
+                <span>${formatCurrency(v.totalAmount)}</span>
+              </div>
+            </td>
+            <td class="px-4 py-3 text-right text-gray-600">${formatNumber(v.transactionCount)}</td>
           </tr>`).join('')}
         </tbody>
       </table>
     </div>` : '';
 
   const body = `
-    <nav class="text-sm text-gray-500 mb-4">
-      <a href="/" class="hover:text-blue-700">Home</a> /
-      <a href="/agency" class="hover:text-blue-700">Agencies</a> /
-      <span>${escapeHtml(agencyName)}</span>
-    </nav>
+    ${breadcrumb([
+      { label: 'Home', href: '/' },
+      { label: 'Agencies', href: '/agency' },
+      { label: agencyName },
+    ])}
 
-    <h1 class="text-2xl md:text-3xl font-bold mb-2">${escapeHtml(displayName)}</h1>
-    <p class="text-gray-600 mb-4">Micro-Purchase Spending Overview — FY${fiscalYear}</p>
+    <div class="mb-6">
+      <h1 class="text-2xl md:text-3xl font-bold text-gray-900">${escapeHtml(displayName)}</h1>
+      <p class="text-sm text-gray-500 mt-1">Micro-Purchase Spending — FY${fiscalYear}</p>
+    </div>
 
-    <div class="grid grid-cols-2 gap-4 my-6">
-      <div class="bg-white border border-gray-200 rounded p-4 text-center">
-        <div class="text-xs text-gray-500 uppercase tracking-wide mb-1">Total Spend</div>
-        <div class="text-2xl font-bold">${formatCurrency(totalAmount)}</div>
-      </div>
-      <div class="bg-white border border-gray-200 rounded p-4 text-center">
-        <div class="text-xs text-gray-500 uppercase tracking-wide mb-1">Transactions</div>
-        <div class="text-2xl font-bold">${formatNumber(transactionCount)}</div>
-      </div>
+    <div class="grid grid-cols-2 gap-4 mb-8">
+      ${statCard('Total Spend', formatCurrency(totalAmount), `FY${fiscalYear}`)}
+      ${statCard('Transactions', formatNumber(transactionCount), 'micro-purchases')}
     </div>
 
     ${categoriesSection}
