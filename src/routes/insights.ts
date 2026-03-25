@@ -1,5 +1,5 @@
 import type { Context } from 'hono';
-import { layout, escapeHtml } from '../templates/layout';
+import { layout, escapeHtml, breadcrumb, inlineBar } from '../templates/layout';
 import { formatCurrency, formatNumber, currentFiscalYear } from '../lib/format';
 import { kvGet, kvSet, cacheKeys, TTL_PAGE } from '../lib/cache';
 import type { Env } from '../types';
@@ -18,6 +18,17 @@ const INSIGHT_TOPICS: Record<string, { title: string; description: string }> = {
     description: 'Which federal agencies increased or decreased their micro-purchase activity.',
   },
 };
+
+const AVAILABLE_YEARS = [2025, 2024, 2023, 2022];
+
+function fyNav(currentFy: number, topicSlug: string): string {
+  const links = AVAILABLE_YEARS.map((y) =>
+    y === currentFy
+      ? `<span class="px-2 py-1 bg-blue-600 text-white text-xs font-semibold rounded">FY${y}</span>`
+      : `<a href="/insights/${y}/${topicSlug}" class="px-2 py-1 text-xs text-gray-500 hover:text-blue-700 rounded hover:bg-gray-100 transition-colors">FY${y}</a>`
+  ).join('');
+  return `<div class="flex items-center gap-1 mt-2">${links}</div>`;
+}
 
 /**
  * GET /insights/:year/:topicSlug — Trend/insight hub pages
@@ -65,13 +76,11 @@ async function renderTop100Vendors(
   fy: number,
   topic: { title: string; description: string }
 ): Promise<Response> {
-  // Use pre-computed KV data if available (written by monthly cron)
   let rows: TopVendorRow[];
   const precomputed = await kvGet(env, `insights:top-vendors:${fy}`);
   if (precomputed) {
     rows = JSON.parse(precomputed) as TopVendorRow[];
   } else {
-    // Fall back to live query — FY-scoped for accuracy
     const result = await env.DB.prepare(`
       SELECT
         mp.recipient_name AS name,
@@ -90,34 +99,44 @@ async function renderTop100Vendors(
     rows = result.results;
   }
 
+  const maxAmount = Math.max(...rows.map((r) => r.total_amount), 1);
+
   const tableRows = rows.map((v, i) => `
-    <tr class="${i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}">
-      <td class="p-3 text-gray-500">${i + 1}</td>
-      <td class="p-3">
+    <tr class="${i % 2 === 0 ? 'bg-white' : 'bg-gray-50'} hover:bg-blue-50 transition-colors">
+      <td class="px-4 py-3 text-gray-400 text-sm w-8">${i + 1}</td>
+      <td class="px-4 py-3 font-medium">
         ${v.slug
-          ? `<a href="/vendor/${v.slug}" class="text-blue-600 hover:underline font-medium">${escapeHtml(v.name)}</a>`
+          ? `<a href="/vendor/${v.slug}" class="text-blue-700 hover:underline">${escapeHtml(v.name)}</a>`
           : escapeHtml(v.name)}
       </td>
-      <td class="p-3 text-right">${formatCurrency(v.total_amount)}</td>
-      <td class="p-3 text-right">${formatNumber(v.transaction_count)}</td>
-      <td class="p-3 text-right">${v.agency_count}</td>
-      <td class="p-3">${escapeHtml(v.top_psc_category ?? '—')}</td>
+      <td class="px-4 py-3 text-right">
+        <div class="flex items-center justify-end gap-2">
+          ${inlineBar(v.total_amount, maxAmount)}
+          <span class="font-medium">${formatCurrency(v.total_amount)}</span>
+        </div>
+      </td>
+      <td class="px-4 py-3 text-right text-gray-500">${formatNumber(v.transaction_count)}</td>
+      <td class="px-4 py-3 text-right text-gray-500">${v.agency_count}</td>
+      <td class="px-4 py-3 text-gray-500 text-sm">${escapeHtml(v.top_psc_category ?? '—')}</td>
     </tr>`).join('');
 
   const body = `
-    <h1 class="text-2xl md:text-3xl font-bold mb-2">${escapeHtml(topic.title)} — FY${fy}</h1>
-    <p class="text-gray-600 mb-6">${escapeHtml(topic.description)}</p>
-
-    <div class="overflow-x-auto">
-      <table class="w-full text-sm border border-gray-200 rounded">
-        <thead class="bg-gray-100">
+    ${breadcrumb([{ label: 'Home', href: '/' }, { label: 'Insights', href: '/insights' }, { label: topic.title }])}
+    <div class="mb-6">
+      <h1 class="text-2xl md:text-3xl font-bold text-gray-900">${escapeHtml(topic.title)}</h1>
+      <p class="text-sm text-gray-500 mt-1">${escapeHtml(topic.description)}</p>
+      ${fyNav(fy, 'top-100-micro-purchase-vendors')}
+    </div>
+    <div class="bg-white border border-gray-200 rounded-lg overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead class="bg-gray-50 border-b border-gray-200">
           <tr>
-            <th class="text-left p-3">#</th>
-            <th class="text-left p-3">Vendor</th>
-            <th class="text-right p-3">FY${fy} Total</th>
-            <th class="text-right p-3">Transactions</th>
-            <th class="text-right p-3">Agencies</th>
-            <th class="text-left p-3">Top Category</th>
+            <th class="text-left px-4 py-3 font-medium text-gray-600">#</th>
+            <th class="text-left px-4 py-3 font-medium text-gray-600">Vendor</th>
+            <th class="text-right px-4 py-3 font-medium text-gray-600">FY${fy} Total</th>
+            <th class="text-right px-4 py-3 font-medium text-gray-600">Transactions</th>
+            <th class="text-right px-4 py-3 font-medium text-gray-600">Agencies</th>
+            <th class="text-left px-4 py-3 font-medium text-gray-600">Top Category</th>
           </tr>
         </thead>
         <tbody>${tableRows}</tbody>
@@ -134,6 +153,7 @@ async function renderTop100Vendors(
 
 interface FastestGrowingRow {
   category_slug: string;
+  category_name: string | null;
   total_amount: number;
   yoy_growth_pct: number;
   transaction_count: number;
@@ -152,43 +172,58 @@ async function renderFastestGrowing(
   } else {
     const result = await env.DB.prepare(`
       SELECT
-        category_slug,
-        MAX(total_amount)      AS total_amount,
-        AVG(yoy_growth_pct)    AS yoy_growth_pct,
-        SUM(transaction_count) AS transaction_count
-      FROM agency_psc_rollups
-      WHERE fiscal_year = ? AND yoy_growth_pct IS NOT NULL AND total_amount > 1000
-      GROUP BY category_slug
+        r.category_slug,
+        MAX(p.category_name)   AS category_name,
+        MAX(r.total_amount)    AS total_amount,
+        AVG(r.yoy_growth_pct)  AS yoy_growth_pct,
+        SUM(r.transaction_count) AS transaction_count
+      FROM agency_psc_rollups r
+      LEFT JOIN psc_codes p ON r.category_slug = p.category_slug
+      WHERE r.fiscal_year = ? AND r.yoy_growth_pct IS NOT NULL AND r.total_amount > 1000
+      GROUP BY r.category_slug
       ORDER BY yoy_growth_pct DESC
       LIMIT 50
     `).bind(fy).all<FastestGrowingRow>();
     rows = result.results;
   }
 
-  const tableRows = rows.map((r, i) => `
-    <tr class="${i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}">
-      <td class="p-3 text-gray-500">${i + 1}</td>
-      <td class="p-3">${escapeHtml(r.category_slug)}</td>
-      <td class="p-3 text-right">${formatCurrency(r.total_amount)}</td>
-      <td class="p-3 text-right ${r.yoy_growth_pct >= 0 ? 'text-green-600' : 'text-red-600'}">
-        ${r.yoy_growth_pct >= 0 ? '+' : ''}${r.yoy_growth_pct.toFixed(1)}%
+  const maxAmount = Math.max(...rows.map((r) => r.total_amount), 1);
+
+  const tableRows = rows.map((r, i) => {
+    const displayName = r.category_name ?? r.category_slug;
+    const growthClass = r.yoy_growth_pct >= 0 ? 'text-green-600' : 'text-red-600';
+    const growthLabel = `${r.yoy_growth_pct >= 0 ? '+' : ''}${r.yoy_growth_pct.toFixed(1)}%`;
+    return `
+    <tr class="${i % 2 === 0 ? 'bg-white' : 'bg-gray-50'} hover:bg-blue-50 transition-colors">
+      <td class="px-4 py-3 text-gray-400 text-sm w-8">${i + 1}</td>
+      <td class="px-4 py-3 font-medium text-gray-900">${escapeHtml(displayName)}</td>
+      <td class="px-4 py-3 text-right">
+        <div class="flex items-center justify-end gap-2">
+          ${inlineBar(r.total_amount, maxAmount)}
+          <span>${formatCurrency(r.total_amount)}</span>
+        </div>
       </td>
-      <td class="p-3 text-right">${formatNumber(r.transaction_count)}</td>
-    </tr>`).join('');
+      <td class="px-4 py-3 text-right font-semibold ${growthClass}">${growthLabel}</td>
+      <td class="px-4 py-3 text-right text-gray-500">${formatNumber(r.transaction_count)}</td>
+    </tr>`;
+  }).join('');
 
   const body = `
-    <h1 class="text-2xl md:text-3xl font-bold mb-2">${escapeHtml(topic.title)} — FY${fy}</h1>
-    <p class="text-gray-600 mb-6">${escapeHtml(topic.description)}</p>
-
-    <div class="overflow-x-auto">
-      <table class="w-full text-sm border border-gray-200 rounded">
-        <thead class="bg-gray-100">
+    ${breadcrumb([{ label: 'Home', href: '/' }, { label: 'Insights', href: '/insights' }, { label: topic.title }])}
+    <div class="mb-6">
+      <h1 class="text-2xl md:text-3xl font-bold text-gray-900">${escapeHtml(topic.title)}</h1>
+      <p class="text-sm text-gray-500 mt-1">${escapeHtml(topic.description)}</p>
+      ${fyNav(fy, 'fastest-growing-micro-purchase-categories')}
+    </div>
+    <div class="bg-white border border-gray-200 rounded-lg overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead class="bg-gray-50 border-b border-gray-200">
           <tr>
-            <th class="text-left p-3">#</th>
-            <th class="text-left p-3">Category</th>
-            <th class="text-right p-3">Total Spend</th>
-            <th class="text-right p-3">YoY Growth</th>
-            <th class="text-right p-3">Transactions</th>
+            <th class="text-left px-4 py-3 font-medium text-gray-600">#</th>
+            <th class="text-left px-4 py-3 font-medium text-gray-600">Category</th>
+            <th class="text-right px-4 py-3 font-medium text-gray-600">Total Spend</th>
+            <th class="text-right px-4 py-3 font-medium text-gray-600">YoY Growth</th>
+            <th class="text-right px-4 py-3 font-medium text-gray-600">Transactions</th>
           </tr>
         </thead>
         <tbody>${tableRows}</tbody>
@@ -247,31 +282,43 @@ async function renderAgencySpendingShifts(
     rows = result.results;
   }
 
-  const tableRows = rows.map((r, i) => `
-    <tr class="${i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}">
-      <td class="p-3">
-        <a href="/agency/${r.slug}" class="text-blue-600 hover:underline">${escapeHtml(r.name)}</a>
-        ${r.abbreviation ? `<span class="text-gray-500"> (${escapeHtml(r.abbreviation)})</span>` : ''}
+  const maxAmount = Math.max(...rows.map((r) => r.curr_amount), 1);
+
+  const tableRows = rows.map((r, i) => {
+    const yoyClass = r.yoy_pct != null ? (r.yoy_pct >= 0 ? 'text-green-600 font-semibold' : 'text-red-600 font-semibold') : 'text-gray-400';
+    const yoyLabel = r.yoy_pct != null ? `${r.yoy_pct >= 0 ? '+' : ''}${r.yoy_pct}%` : '—';
+    return `
+    <tr class="${i % 2 === 0 ? 'bg-white' : 'bg-gray-50'} hover:bg-blue-50 transition-colors">
+      <td class="px-4 py-3">
+        <a href="/agency/${r.slug}" class="font-medium text-blue-700 hover:underline">${escapeHtml(r.name)}</a>
+        ${r.abbreviation ? `<span class="text-gray-400 font-normal ml-1">(${escapeHtml(r.abbreviation)})</span>` : ''}
       </td>
-      <td class="p-3 text-right">${formatCurrency(r.curr_amount)}</td>
-      <td class="p-3 text-right ${r.prev_amount ? '' : 'text-gray-400'}">${r.prev_amount ? formatCurrency(r.prev_amount) : '—'}</td>
-      <td class="p-3 text-right ${r.yoy_pct != null ? (r.yoy_pct >= 0 ? 'text-green-600' : 'text-red-600') : 'text-gray-400'}">
-        ${r.yoy_pct != null ? `${r.yoy_pct >= 0 ? '+' : ''}${r.yoy_pct}%` : '—'}
+      <td class="px-4 py-3 text-right">
+        <div class="flex items-center justify-end gap-2">
+          ${inlineBar(r.curr_amount, maxAmount)}
+          <span class="font-medium">${formatCurrency(r.curr_amount)}</span>
+        </div>
       </td>
-    </tr>`).join('');
+      <td class="px-4 py-3 text-right text-gray-500">${r.prev_amount ? formatCurrency(r.prev_amount) : '—'}</td>
+      <td class="px-4 py-3 text-right ${yoyClass}">${yoyLabel}</td>
+    </tr>`;
+  }).join('');
 
   const body = `
-    <h1 class="text-2xl md:text-3xl font-bold mb-2">${escapeHtml(topic.title)} — FY${fy}</h1>
-    <p class="text-gray-600 mb-6">${escapeHtml(topic.description)}</p>
-
-    <div class="overflow-x-auto">
-      <table class="w-full text-sm border border-gray-200 rounded">
-        <thead class="bg-gray-100">
+    ${breadcrumb([{ label: 'Home', href: '/' }, { label: 'Insights', href: '/insights' }, { label: topic.title }])}
+    <div class="mb-6">
+      <h1 class="text-2xl md:text-3xl font-bold text-gray-900">${escapeHtml(topic.title)}</h1>
+      <p class="text-sm text-gray-500 mt-1">${escapeHtml(topic.description)}</p>
+      ${fyNav(fy, 'agency-spending-shifts')}
+    </div>
+    <div class="bg-white border border-gray-200 rounded-lg overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead class="bg-gray-50 border-b border-gray-200">
           <tr>
-            <th class="text-left p-3">Agency</th>
-            <th class="text-right p-3">FY${fy} Spend</th>
-            <th class="text-right p-3">FY${fy - 1} Spend</th>
-            <th class="text-right p-3">YoY Change</th>
+            <th class="text-left px-4 py-3 font-medium text-gray-600">Agency</th>
+            <th class="text-right px-4 py-3 font-medium text-gray-600">FY${fy} Spend</th>
+            <th class="text-right px-4 py-3 font-medium text-gray-600">FY${fy - 1} Spend</th>
+            <th class="text-right px-4 py-3 font-medium text-gray-600">YoY Change</th>
           </tr>
         </thead>
         <tbody>${tableRows}</tbody>
@@ -292,7 +339,6 @@ async function renderAgencySpendingShifts(
 export async function insightsIndexHandler(c: Context<{ Bindings: Env }>): Promise<Response> {
   const env = c.env;
 
-  // Use latest FY with data
   let fy = currentFiscalYear();
   const latest = await env.DB.prepare(
     `SELECT fiscal_year FROM micro_purchases ORDER BY fiscal_year DESC LIMIT 1`
@@ -308,7 +354,7 @@ export async function insightsIndexHandler(c: Context<{ Bindings: Env }>): Promi
     },
     {
       slug: 'fastest-growing-micro-purchase-categories',
-      title: 'Fastest Growing Micro-Purchase Categories',
+      title: 'Fastest Growing Categories',
       description: 'Product categories with the highest year-over-year growth in federal micro-purchase spending.',
       icon: '📈',
     },
@@ -326,7 +372,7 @@ export async function insightsIndexHandler(c: Context<{ Bindings: Env }>): Promi
       <div class="text-2xl mb-3">${t.icon}</div>
       <div class="font-semibold text-gray-900 mb-1">${escapeHtml(t.title)}</div>
       <p class="text-sm text-gray-500 leading-relaxed">${escapeHtml(t.description)}</p>
-      <div class="mt-3 text-sm text-blue-600 font-medium">View FY${fy} report →</div>
+      <div class="mt-4 text-sm text-blue-600 font-medium">View FY${fy} report →</div>
     </a>`).join('');
 
   const body = `
@@ -334,13 +380,12 @@ export async function insightsIndexHandler(c: Context<{ Bindings: Env }>): Promi
       <h1 class="text-2xl font-bold text-gray-900">Micro-Purchase Insights</h1>
       <p class="text-sm text-gray-500 mt-1">Data-driven reports on federal micro-purchase trends — FY${fy}</p>
     </div>
-    <div class="grid md:grid-cols-3 gap-4">
+    <div class="grid md:grid-cols-3 gap-4 mb-8">
       ${topicCards}
     </div>
-    <div class="mt-10 bg-blue-50 border border-blue-100 rounded-xl p-6 text-sm text-blue-800 leading-relaxed">
-      <strong>About these reports:</strong> Insights are generated from USASpending.gov micro-purchase data
-      and updated weekly. They highlight trends, opportunities, and shifts in federal buying patterns
-      that matter for small business government contractors.
+    <div class="bg-blue-50 border border-blue-100 rounded-xl p-5 text-sm text-blue-800 leading-relaxed">
+      <strong>About these reports:</strong> Generated from USASpending.gov micro-purchase data, updated weekly.
+      Reports highlight trends and opportunities in federal buying patterns for small business government contractors.
     </div>`;
 
   const html = layout(
