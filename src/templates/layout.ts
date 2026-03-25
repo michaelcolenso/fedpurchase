@@ -29,6 +29,7 @@ export function layout(options: LayoutOptions, body: string): string {
   <meta property="og:type" content="website">
   <meta name="robots" content="index, follow">
   <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2/dist/tailwind.min.css" rel="stylesheet">
+  <script defer data-domain="fedpurchase.io" src="https://plausible.io/js/script.js"></script>
   ${jsonLd}
 </head>
 <body class="bg-gray-50 text-gray-900">

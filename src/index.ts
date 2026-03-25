@@ -399,6 +399,22 @@ app.post('/admin/ingest', async (c) => {
   }
 });
 
+// Email subscribe
+app.post('/subscribe', async (c) => {
+  try {
+    const body = await c.req.json() as { email?: string };
+    const email = (body.email ?? '').trim().toLowerCase();
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return c.json({ message: 'Please enter a valid email address.' }, 400);
+    }
+    await c.env.KV.put(`subscriber:${email}`, new Date().toISOString(), { expirationTtl: 60 * 60 * 24 * 365 * 5 });
+    return c.json({ message: "You're subscribed! We'll send you weekly micro-purchase alerts." });
+  } catch (err) {
+    console.error('Subscribe error:', err);
+    return c.json({ message: 'Something went wrong. Please try again.' }, 500);
+  }
+});
+
 // 404 handler
 app.notFound((c) => {
   return c.html(`<!DOCTYPE html>

@@ -25,7 +25,8 @@ export function renderHomePage(data: HomePageData): string {
 
   const agencyCards = topAgencies.map((a) => `
     <a href="/agency/${a.slug}"
-       class="block bg-white border border-gray-200 rounded p-4 hover:border-blue-400 transition">
+       class="agency-card block bg-white border border-gray-200 rounded p-4 hover:border-blue-400 transition"
+       data-name="${escapeHtml(a.name.toLowerCase())}">
       <div class="font-semibold">${escapeHtml(a.name)}${a.abbreviation ? ` <span class="text-gray-500 font-normal">(${a.abbreviation})</span>` : ''}</div>
       <div class="text-sm text-gray-600 mt-1">
         ${formatCurrency(a.totalAmount)} · ${formatNumber(a.transactionCount)} transactions
@@ -52,10 +53,21 @@ export function renderHomePage(data: HomePageData): string {
       </div>
     </div>
 
+    <div class="mb-6">
+      <input
+        id="agency-search"
+        type="search"
+        placeholder="Search agencies..."
+        class="w-full md:w-80 px-4 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500"
+        oninput="filterAgencies(this.value)"
+      >
+    </div>
+
     <h2 class="text-xl font-semibold mb-4">Top Agencies by Micro-Purchase Volume</h2>
-    <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-4 mb-10">
+    <div id="agency-grid" class="grid md:grid-cols-2 lg:grid-cols-3 gap-4 mb-10">
       ${agencyCards}
     </div>
+    <p id="no-results" class="text-gray-500 mb-10 hidden">No agencies match your search.</p>
 
     ${topCategories.length > 0 ? `
     <h2 class="text-xl font-semibold mb-4">Top Product Categories</h2>
@@ -70,7 +82,62 @@ export function renderHomePage(data: HomePageData): string {
         using a government purchase card. These transactions are reported to USASpending.gov
         and represent a huge, largely overlooked market for small government contractors.
       </p>
-    </div>`;
+    </div>
+
+    <div class="mt-12 bg-gray-900 text-white rounded-lg p-8 text-center">
+      <h2 class="text-xl font-bold mb-2">Get Weekly Micro-Purchase Alerts</h2>
+      <p class="text-gray-300 mb-6 max-w-md mx-auto">
+        New transactions posted every week. Get a digest of what agencies are buying in your product category.
+      </p>
+      <form id="subscribe-form" class="flex flex-col sm:flex-row gap-3 justify-center max-w-md mx-auto"
+            onsubmit="handleSubscribe(event)">
+        <input
+          type="email"
+          name="email"
+          placeholder="your@email.com"
+          required
+          class="flex-1 px-4 py-2 rounded text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-400"
+        >
+        <button type="submit"
+          class="px-6 py-2 bg-blue-600 hover:bg-blue-500 text-white font-semibold rounded transition">
+          Subscribe
+        </button>
+      </form>
+      <p id="subscribe-msg" class="mt-3 text-sm text-green-400 hidden"></p>
+    </div>
+
+    <script>
+      function filterAgencies(q) {
+        var cards = document.querySelectorAll('.agency-card');
+        var term = q.toLowerCase().trim();
+        var visible = 0;
+        cards.forEach(function(card) {
+          var match = !term || card.dataset.name.indexOf(term) !== -1;
+          card.style.display = match ? '' : 'none';
+          if (match) visible++;
+        });
+        document.getElementById('no-results').classList.toggle('hidden', visible > 0);
+      }
+
+      function handleSubscribe(e) {
+        e.preventDefault();
+        var form = e.target;
+        var email = form.querySelector('[name=email]').value;
+        var msg = document.getElementById('subscribe-msg');
+        fetch('/subscribe', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({email: email})
+        }).then(function(r) { return r.json(); }).then(function(data) {
+          msg.textContent = data.message || 'You\'re subscribed!';
+          msg.classList.remove('hidden');
+          form.reset();
+        }).catch(function() {
+          msg.textContent = 'Something went wrong. Please try again.';
+          msg.classList.remove('hidden');
+        });
+      }
+    </script>`;
 
   const structuredData = {
     '@context': 'https://schema.org',
