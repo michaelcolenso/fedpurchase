@@ -117,3 +117,71 @@ export async function industryHandler(c: Context<{ Bindings: Env }>): Promise<Re
   await kvSet(env, cacheKey, html, TTL_PAGE);
   return c.html(html);
 }
+
+/**
+ * GET /industry — Industry list page
+ */
+export async function industryListHandler(c: Context<{ Bindings: Env }>): Promise<Response> {
+  const env = c.env;
+
+  const cached = await kvGet(env, 'page:industry-list');
+  if (cached) return c.html(cached);
+
+  const rows = await env.DB.prepare(`
+    SELECT n.code, n.description, n.slug, n.sector_name,
+           COALESCE(SUM(mp.amount), 0) AS total_amount,
+           COALESCE(COUNT(mp.id), 0)   AS transaction_count
+    FROM naics_codes n
+    LEFT JOIN micro_purchases mp ON mp.naics_code = n.code
+    GROUP BY n.code
+    ORDER BY total_amount DESC
+  `).all<{ code: string; description: string; slug: string; sector_name: string | null; total_amount: number; transaction_count: number }>();
+
+  const { layout, escapeHtml, breadcrumb, inlineBar } = await import('../templates/layout');
+  const { formatCurrency, formatNumber } = await import('../lib/format');
+
+  const maxAmount = Math.max(...rows.results.map((r) => r.total_amount), 1);
+
+  const tableRows = rows.results.map((r, i) => `
+    <tr class="${i % 2 === 0 ? 'bg-white' : 'bg-gray-50'} hover:bg-blue-50 transition-colors">
+      <td class="px-4 py-3">
+        <a href="/industry/${r.code}" class="font-medium text-blue-700 hover:underline">${escapeHtml(r.description)}</a>
+        <div class="text-xs text-gray-400 mt-0.5 font-mono">${escapeHtml(r.code)}</div>
+      </td>
+      <td class="px-4 py-3 text-gray-500 text-sm">${escapeHtml(r.sector_name ?? '—')}</td>
+      <td class="px-4 py-3 text-right">
+        <div class="flex items-center justify-end gap-2">
+          ${inlineBar(r.total_amount, maxAmount)}
+          <span class="font-medium">${formatCurrency(r.total_amount)}</span>
+        </div>
+      </td>
+      <td class="px-4 py-3 text-right text-gray-500">${formatNumber(r.transaction_count)}</td>
+    </tr>`).join('');
+
+  const body = `
+    ${breadcrumb([{ label: 'Home', href: '/' }, { label: 'Industries' }])}
+    <div class="mb-6">
+      <h1 class="text-2xl font-bold text-gray-900">Industries (NAICS)</h1>
+      <p class="text-sm text-gray-500 mt-1">${rows.results.length} industry codes ranked by federal micro-purchase volume</p>
+    </div>
+    <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
+      <table class="w-full text-sm">
+        <thead class="bg-gray-50 border-b border-gray-200">
+          <tr>
+            <th class="text-left px-4 py-3 font-medium text-gray-600">Industry</th>
+            <th class="text-left px-4 py-3 font-medium text-gray-600">Sector</th>
+            <th class="text-right px-4 py-3 font-medium text-gray-600">Total Spend</th>
+            <th class="text-right px-4 py-3 font-medium text-gray-600">Transactions</th>
+          </tr>
+        </thead>
+        <tbody>${tableRows}</tbody>
+      </table>
+    </div>`;
+
+  const html = layout(
+    { title: 'Industries (NAICS) — Federal Micro-Purchase Spending | GovPurchase Intel', description: 'Browse NAICS industry codes ranked by federal micro-purchase spending volume.', canonicalPath: '/industry' },
+    body
+  );
+  await kvSet(env, 'page:industry-list', html, TTL_PAGE);
+  return c.html(html);
+}

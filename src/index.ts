@@ -1,9 +1,9 @@
 import { Hono } from 'hono';
 import { homeHandler } from './routes/home';
-import { agencyHandler, agencyPscHandler } from './routes/agency';
-import { vendorHandler } from './routes/vendor';
-import { industryHandler } from './routes/industry';
-import { insightsHandler } from './routes/insights';
+import { agencyHandler, agencyPscHandler, agencyListHandler } from './routes/agency';
+import { vendorHandler, vendorListHandler } from './routes/vendor';
+import { industryHandler, industryListHandler } from './routes/industry';
+import { insightsHandler, insightsIndexHandler } from './routes/insights';
 import { sitemapIndexHandler, sitemapSegmentHandler } from './routes/sitemap';
 import { scheduled as scheduledHandler } from './cron';
 import { seedReferenceData } from './cron';
@@ -15,18 +15,22 @@ const app = new Hono<{ Bindings: Env }>();
 // Homepage
 app.get('/', homeHandler);
 
-// Agency routes (order matters — more specific first)
+// Agency routes (list before parameterized)
+app.get('/agency', agencyListHandler);
 app.get('/agency/:agencySlug/:pscSlug', agencyPscHandler);
 app.get('/agency/:agencySlug', agencyHandler);
 
-// Vendor routes
+// Vendor routes (list before parameterized)
+app.get('/vendor', vendorListHandler);
 app.get('/vendor/:vendorSlug', vendorHandler);
 
-// Industry routes
+// Industry routes (list before parameterized)
+app.get('/industry', industryListHandler);
 app.get('/industry/:naicsCode/:agencySlug', industryHandler);
 app.get('/industry/:naicsCode', industryHandler);
 
-// Insight routes
+// Insight routes (index before parameterized)
+app.get('/insights', insightsIndexHandler);
 app.get('/insights/:year/:topicSlug', insightsHandler);
 
 // Sitemaps

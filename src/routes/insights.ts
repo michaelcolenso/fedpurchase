@@ -1,6 +1,6 @@
 import type { Context } from 'hono';
 import { layout, escapeHtml } from '../templates/layout';
-import { formatCurrency, formatNumber } from '../lib/format';
+import { formatCurrency, formatNumber, currentFiscalYear } from '../lib/format';
 import { kvGet, kvSet, cacheKeys, TTL_PAGE } from '../lib/cache';
 import type { Env } from '../types';
 
@@ -283,5 +283,69 @@ async function renderAgencySpendingShifts(
     body
   );
   await kvSet(env, cacheKeys.insightsPage(fy, 'agency-spending-shifts'), html, TTL_PAGE);
+  return c.html(html);
+}
+
+/**
+ * GET /insights — Insights hub page
+ */
+export async function insightsIndexHandler(c: Context<{ Bindings: Env }>): Promise<Response> {
+  const env = c.env;
+
+  // Use latest FY with data
+  let fy = currentFiscalYear();
+  const latest = await env.DB.prepare(
+    `SELECT fiscal_year FROM micro_purchases ORDER BY fiscal_year DESC LIMIT 1`
+  ).first<{ fiscal_year: number }>();
+  if (latest) fy = latest.fiscal_year;
+
+  const topics = [
+    {
+      slug: 'top-100-micro-purchase-vendors',
+      title: 'Top 100 Federal Micro-Purchase Vendors',
+      description: 'The vendors receiving the most federal micro-purchase dollars across all agencies.',
+      icon: '🏆',
+    },
+    {
+      slug: 'fastest-growing-micro-purchase-categories',
+      title: 'Fastest Growing Micro-Purchase Categories',
+      description: 'Product categories with the highest year-over-year growth in federal micro-purchase spending.',
+      icon: '📈',
+    },
+    {
+      slug: 'agency-spending-shifts',
+      title: 'Agency Spending Shifts',
+      description: 'Which federal agencies increased or decreased their micro-purchase activity year over year.',
+      icon: '🔄',
+    },
+  ];
+
+  const topicCards = topics.map((t) => `
+    <a href="/insights/${fy}/${t.slug}"
+       class="block bg-white border border-gray-200 rounded-lg p-6 hover:border-blue-400 hover:shadow-sm transition">
+      <div class="text-2xl mb-3">${t.icon}</div>
+      <div class="font-semibold text-gray-900 mb-1">${escapeHtml(t.title)}</div>
+      <p class="text-sm text-gray-500 leading-relaxed">${escapeHtml(t.description)}</p>
+      <div class="mt-3 text-sm text-blue-600 font-medium">View FY${fy} report →</div>
+    </a>`).join('');
+
+  const body = `
+    <div class="mb-8">
+      <h1 class="text-2xl font-bold text-gray-900">Micro-Purchase Insights</h1>
+      <p class="text-sm text-gray-500 mt-1">Data-driven reports on federal micro-purchase trends — FY${fy}</p>
+    </div>
+    <div class="grid md:grid-cols-3 gap-4">
+      ${topicCards}
+    </div>
+    <div class="mt-10 bg-blue-50 border border-blue-100 rounded-xl p-6 text-sm text-blue-800 leading-relaxed">
+      <strong>About these reports:</strong> Insights are generated from USASpending.gov micro-purchase data
+      and updated weekly. They highlight trends, opportunities, and shifts in federal buying patterns
+      that matter for small business government contractors.
+    </div>`;
+
+  const html = layout(
+    { title: `Federal Micro-Purchase Insights FY${fy} | GovPurchase Intel`, description: 'Data-driven reports on federal micro-purchase spending trends, top vendors, and agency shifts.', canonicalPath: '/insights' },
+    body
+  );
   return c.html(html);
 }

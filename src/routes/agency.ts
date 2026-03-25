@@ -243,3 +243,90 @@ export async function agencyHandler(c: Context<{ Bindings: Env }>): Promise<Resp
   await kvSet(env, cacheKey, html, TTL_PAGE);
   return c.html(html);
 }
+
+/**
+ * GET /agency — Agency list page
+ */
+export async function agencyListHandler(c: Context<{ Bindings: Env }>): Promise<Response> {
+  const env = c.env;
+
+  const cached = await kvGet(env, 'page:agency-list');
+  if (cached) return c.html(cached);
+
+  const rows = await env.DB.prepare(`
+    SELECT a.name, a.slug, a.abbreviation,
+           COALESCE(SUM(mp.amount), 0) AS total_amount,
+           COALESCE(COUNT(mp.id), 0)   AS transaction_count
+    FROM agencies a
+    LEFT JOIN micro_purchases mp ON mp.agency_id = a.id
+    GROUP BY a.id
+    ORDER BY total_amount DESC
+  `).all<{ name: string; slug: string; abbreviation: string | null; total_amount: number; transaction_count: number }>();
+
+  const { layout, escapeHtml, breadcrumb, inlineBar } = await import('../templates/layout');
+  const { formatCurrency, formatNumber } = await import('../lib/format');
+
+  const maxAmount = Math.max(...rows.results.map((r) => r.total_amount), 1);
+
+  const tableRows = rows.results.map((r, i) => `
+    <tr class="agency-row ${i % 2 === 0 ? 'bg-white' : 'bg-gray-50'} hover:bg-blue-50 transition-colors"
+        data-name="${escapeHtml(r.name.toLowerCase())}">
+      <td class="px-4 py-3">
+        <a href="/agency/${r.slug}" class="font-medium text-blue-700 hover:underline">
+          ${escapeHtml(r.name)}${r.abbreviation ? ` <span class="text-gray-400 font-normal">(${escapeHtml(r.abbreviation)})</span>` : ''}
+        </a>
+      </td>
+      <td class="px-4 py-3 text-right">
+        <div class="flex items-center justify-end gap-2">
+          ${inlineBar(r.total_amount, maxAmount)}
+          <span class="font-medium">${formatCurrency(r.total_amount)}</span>
+        </div>
+      </td>
+      <td class="px-4 py-3 text-right text-gray-500">${formatNumber(r.transaction_count)}</td>
+    </tr>`).join('');
+
+  const body = `
+    ${breadcrumb([{ label: 'Home', href: '/' }, { label: 'Agencies' }])}
+    <div class="mb-6 flex flex-col sm:flex-row sm:items-center gap-3 justify-between">
+      <div>
+        <h1 class="text-2xl font-bold text-gray-900">Federal Agencies</h1>
+        <p class="text-sm text-gray-500 mt-1">${rows.results.length} agencies tracked by micro-purchase volume</p>
+      </div>
+      <input id="agency-search" type="search" placeholder="Search agencies..."
+        class="w-full sm:w-64 px-4 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-blue-500 bg-white"
+        oninput="filterRows(this.value)" autocomplete="off">
+    </div>
+    <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
+      <table class="w-full text-sm">
+        <thead class="bg-gray-50 border-b border-gray-200">
+          <tr>
+            <th class="text-left px-4 py-3 font-medium text-gray-600">Agency</th>
+            <th class="text-right px-4 py-3 font-medium text-gray-600">Total Spend</th>
+            <th class="text-right px-4 py-3 font-medium text-gray-600">Transactions</th>
+          </tr>
+        </thead>
+        <tbody id="agency-table">${tableRows}</tbody>
+      </table>
+    </div>
+    <p id="no-results" class="text-gray-500 mt-4 hidden">No agencies match your search.</p>
+    <script>
+      function filterRows(q) {
+        var rows = document.querySelectorAll('.agency-row');
+        var term = q.toLowerCase().trim();
+        var visible = 0;
+        rows.forEach(function(r) {
+          var match = !term || r.dataset.name.indexOf(term) !== -1;
+          r.style.display = match ? '' : 'none';
+          if (match) visible++;
+        });
+        document.getElementById('no-results').classList.toggle('hidden', visible > 0);
+      }
+    </script>`;
+
+  const html = layout(
+    { title: 'Federal Agencies — Micro-Purchase Spending | GovPurchase Intel', description: 'Browse all federal agencies ranked by micro-purchase spending volume.', canonicalPath: '/agency' },
+    body
+  );
+  await kvSet(env, 'page:agency-list', html, TTL_PAGE);
+  return c.html(html);
+}
