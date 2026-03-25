@@ -131,14 +131,14 @@ export async function vendorListHandler(c: Context<{ Bindings: Env }>): Promise<
       <p class="text-sm text-gray-500 mt-1">Top 100 vendors by total micro-purchase receipts</p>
     </div>
     <div class="bg-white border border-gray-200 rounded-lg overflow-x-auto">
-      <table class="w-full text-sm">
+      <table class="w-full text-sm" data-sortable>
         <thead class="bg-gray-50 border-b border-gray-200">
           <tr>
-            <th class="text-left px-4 py-3 font-medium text-gray-600">Vendor</th>
-            <th class="text-right px-4 py-3 font-medium text-gray-600">Total Received</th>
-            <th class="text-right px-4 py-3 font-medium text-gray-600">Transactions</th>
-            <th class="text-left px-4 py-3 font-medium text-gray-600">Top Agency</th>
-            <th class="text-left px-4 py-3 font-medium text-gray-600">Top Category</th>
+            <th class="text-left px-4 py-3 font-medium text-gray-600" data-sort="text">Vendor</th>
+            <th class="text-right px-4 py-3 font-medium text-gray-600" data-sort="currency">Total Received</th>
+            <th class="text-right px-4 py-3 font-medium text-gray-600" data-sort="number">Transactions</th>
+            <th class="text-left px-4 py-3 font-medium text-gray-600" data-sort="text">Top Agency</th>
+            <th class="text-left px-4 py-3 font-medium text-gray-600" data-sort="text">Top Category</th>
           </tr>
         </thead>
         <tbody>${tableRows}</tbody>

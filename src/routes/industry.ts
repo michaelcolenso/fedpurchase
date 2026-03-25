@@ -165,13 +165,13 @@ export async function industryListHandler(c: Context<{ Bindings: Env }>): Promis
       <p class="text-sm text-gray-500 mt-1">${rows.results.length} industry codes ranked by federal micro-purchase volume</p>
     </div>
     <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
-      <table class="w-full text-sm">
+      <table class="w-full text-sm" data-sortable>
         <thead class="bg-gray-50 border-b border-gray-200">
           <tr>
-            <th class="text-left px-4 py-3 font-medium text-gray-600">Industry</th>
-            <th class="text-left px-4 py-3 font-medium text-gray-600">Sector</th>
-            <th class="text-right px-4 py-3 font-medium text-gray-600">Total Spend</th>
-            <th class="text-right px-4 py-3 font-medium text-gray-600">Transactions</th>
+            <th class="text-left px-4 py-3 font-medium text-gray-600" data-sort="text">Industry</th>
+            <th class="text-left px-4 py-3 font-medium text-gray-600" data-sort="text">Sector</th>
+            <th class="text-right px-4 py-3 font-medium text-gray-600" data-sort="currency">Total Spend</th>
+            <th class="text-right px-4 py-3 font-medium text-gray-600" data-sort="number">Transactions</th>
           </tr>
         </thead>
         <tbody>${tableRows}</tbody>

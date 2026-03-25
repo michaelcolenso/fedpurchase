@@ -128,15 +128,15 @@ async function renderTop100Vendors(
       ${fyNav(fy, 'top-100-micro-purchase-vendors')}
     </div>
     <div class="bg-white border border-gray-200 rounded-lg overflow-x-auto">
-      <table class="w-full text-sm">
+      <table class="w-full text-sm" data-sortable>
         <thead class="bg-gray-50 border-b border-gray-200">
           <tr>
             <th class="text-left px-4 py-3 font-medium text-gray-600">#</th>
-            <th class="text-left px-4 py-3 font-medium text-gray-600">Vendor</th>
-            <th class="text-right px-4 py-3 font-medium text-gray-600">FY${fy} Total</th>
-            <th class="text-right px-4 py-3 font-medium text-gray-600">Transactions</th>
-            <th class="text-right px-4 py-3 font-medium text-gray-600">Agencies</th>
-            <th class="text-left px-4 py-3 font-medium text-gray-600">Top Category</th>
+            <th class="text-left px-4 py-3 font-medium text-gray-600" data-sort="text">Vendor</th>
+            <th class="text-right px-4 py-3 font-medium text-gray-600" data-sort="currency">FY${fy} Total</th>
+            <th class="text-right px-4 py-3 font-medium text-gray-600" data-sort="number">Transactions</th>
+            <th class="text-right px-4 py-3 font-medium text-gray-600" data-sort="number">Agencies</th>
+            <th class="text-left px-4 py-3 font-medium text-gray-600" data-sort="text">Top Category</th>
           </tr>
         </thead>
         <tbody>${tableRows}</tbody>
@@ -216,14 +216,14 @@ async function renderFastestGrowing(
       ${fyNav(fy, 'fastest-growing-micro-purchase-categories')}
     </div>
     <div class="bg-white border border-gray-200 rounded-lg overflow-x-auto">
-      <table class="w-full text-sm">
+      <table class="w-full text-sm" data-sortable>
         <thead class="bg-gray-50 border-b border-gray-200">
           <tr>
             <th class="text-left px-4 py-3 font-medium text-gray-600">#</th>
-            <th class="text-left px-4 py-3 font-medium text-gray-600">Category</th>
-            <th class="text-right px-4 py-3 font-medium text-gray-600">Total Spend</th>
-            <th class="text-right px-4 py-3 font-medium text-gray-600">YoY Growth</th>
-            <th class="text-right px-4 py-3 font-medium text-gray-600">Transactions</th>
+            <th class="text-left px-4 py-3 font-medium text-gray-600" data-sort="text">Category</th>
+            <th class="text-right px-4 py-3 font-medium text-gray-600" data-sort="currency">Total Spend</th>
+            <th class="text-right px-4 py-3 font-medium text-gray-600" data-sort="percent">YoY Growth</th>
+            <th class="text-right px-4 py-3 font-medium text-gray-600" data-sort="number">Transactions</th>
           </tr>
         </thead>
         <tbody>${tableRows}</tbody>
@@ -312,13 +312,13 @@ async function renderAgencySpendingShifts(
       ${fyNav(fy, 'agency-spending-shifts')}
     </div>
     <div class="bg-white border border-gray-200 rounded-lg overflow-x-auto">
-      <table class="w-full text-sm">
+      <table class="w-full text-sm" data-sortable>
         <thead class="bg-gray-50 border-b border-gray-200">
           <tr>
-            <th class="text-left px-4 py-3 font-medium text-gray-600">Agency</th>
-            <th class="text-right px-4 py-3 font-medium text-gray-600">FY${fy} Spend</th>
-            <th class="text-right px-4 py-3 font-medium text-gray-600">FY${fy - 1} Spend</th>
-            <th class="text-right px-4 py-3 font-medium text-gray-600">YoY Change</th>
+            <th class="text-left px-4 py-3 font-medium text-gray-600" data-sort="text">Agency</th>
+            <th class="text-right px-4 py-3 font-medium text-gray-600" data-sort="currency">FY${fy} Spend</th>
+            <th class="text-right px-4 py-3 font-medium text-gray-600" data-sort="currency">FY${fy - 1} Spend</th>
+            <th class="text-right px-4 py-3 font-medium text-gray-600" data-sort="percent">YoY Change</th>
           </tr>
         </thead>
         <tbody>${tableRows}</tbody>

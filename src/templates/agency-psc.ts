@@ -78,14 +78,14 @@ export function renderAgencyPscPage(data: AgencyPscPageData): string {
   const vendorsTable = topVendors.length > 0 ? `
     <h2 class="text-lg font-semibold mt-8 mb-3">Top Vendors</h2>
     <div class="bg-white border border-gray-200 rounded-lg overflow-x-auto">
-      <table class="w-full text-sm">
+      <table class="w-full text-sm" data-sortable>
         <thead class="bg-gray-50 border-b border-gray-200">
           <tr>
-            <th class="text-left px-4 py-3 font-medium text-gray-600">Vendor</th>
-            <th class="text-right px-4 py-3 font-medium text-gray-600">Total Amount</th>
-            <th class="text-right px-4 py-3 font-medium text-gray-600">Transactions</th>
-            <th class="text-right px-4 py-3 font-medium text-gray-600">Avg Order</th>
-            <th class="text-right px-4 py-3 font-medium text-gray-600">% of Category</th>
+            <th class="text-left px-4 py-3 font-medium text-gray-600" data-sort="text">Vendor</th>
+            <th class="text-right px-4 py-3 font-medium text-gray-600" data-sort="currency">Total Amount</th>
+            <th class="text-right px-4 py-3 font-medium text-gray-600" data-sort="number">Transactions</th>
+            <th class="text-right px-4 py-3 font-medium text-gray-600" data-sort="currency">Avg Order</th>
+            <th class="text-right px-4 py-3 font-medium text-gray-600" data-sort="percent">% of Category</th>
           </tr>
         </thead>
         <tbody>
@@ -132,12 +132,12 @@ export function renderAgencyPscPage(data: AgencyPscPageData): string {
   const recentTable = recentTransactions.length > 0 ? `
     <h2 class="text-lg font-semibold mt-8 mb-3">Recent Transactions</h2>
     <div class="bg-white border border-gray-200 rounded-lg overflow-x-auto">
-      <table class="w-full text-sm">
+      <table class="w-full text-sm" data-sortable>
         <thead class="bg-gray-50 border-b border-gray-200">
           <tr>
-            <th class="text-left px-4 py-3 font-medium text-gray-600">Date</th>
-            <th class="text-right px-4 py-3 font-medium text-gray-600">Amount</th>
-            <th class="text-left px-4 py-3 font-medium text-gray-600">Vendor</th>
+            <th class="text-left px-4 py-3 font-medium text-gray-600" data-sort="text">Date</th>
+            <th class="text-right px-4 py-3 font-medium text-gray-600" data-sort="currency">Amount</th>
+            <th class="text-left px-4 py-3 font-medium text-gray-600" data-sort="text">Vendor</th>
             <th class="text-left px-4 py-3 font-medium text-gray-600">Description</th>
           </tr>
         </thead>

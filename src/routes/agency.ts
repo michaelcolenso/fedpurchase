@@ -297,12 +297,12 @@ export async function agencyListHandler(c: Context<{ Bindings: Env }>): Promise<
         oninput="filterRows(this.value)" autocomplete="off">
     </div>
     <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
-      <table class="w-full text-sm">
+      <table class="w-full text-sm" data-sortable>
         <thead class="bg-gray-50 border-b border-gray-200">
           <tr>
-            <th class="text-left px-4 py-3 font-medium text-gray-600">Agency</th>
-            <th class="text-right px-4 py-3 font-medium text-gray-600">Total Spend</th>
-            <th class="text-right px-4 py-3 font-medium text-gray-600">Transactions</th>
+            <th class="text-left px-4 py-3 font-medium text-gray-600" data-sort="text">Agency</th>
+            <th class="text-right px-4 py-3 font-medium text-gray-600" data-sort="currency">Total Spend</th>
+            <th class="text-right px-4 py-3 font-medium text-gray-600" data-sort="number">Transactions</th>
           </tr>
         </thead>
         <tbody id="agency-table">${tableRows}</tbody>

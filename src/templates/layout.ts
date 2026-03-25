@@ -89,6 +89,69 @@ export function layout(options: LayoutOptions, body: string): string {
     </div>
   </footer>
 
+  <script>
+    (function() {
+      function initSortableTables() {
+        document.querySelectorAll('table[data-sortable]').forEach(function(table) {
+          var ths = Array.from(table.querySelectorAll('thead th'));
+          ths.forEach(function(th, colIdx) {
+            if (!th.dataset.sort) return;
+            th.style.cursor = 'pointer';
+            th.style.userSelect = 'none';
+            var icon = document.createElement('span');
+            icon.className = 'sort-icon';
+            icon.style.cssText = 'margin-left:4px;opacity:0.35;font-size:0.7em';
+            icon.textContent = '↕';
+            th.appendChild(icon);
+            th.addEventListener('click', function() {
+              var asc = th.dataset.dir !== 'asc';
+              ths.forEach(function(t) {
+                delete t.dataset.dir;
+                var ic = t.querySelector('.sort-icon');
+                if (ic) { ic.textContent = '↕'; ic.style.opacity = '0.35'; }
+              });
+              th.dataset.dir = asc ? 'asc' : 'desc';
+              var ic = th.querySelector('.sort-icon');
+              if (ic) { ic.textContent = asc ? '↑' : '↓'; ic.style.opacity = '1'; }
+              var tbody = table.querySelector('tbody');
+              var rows = Array.from(tbody.querySelectorAll('tr'));
+              var type = th.dataset.sort;
+              rows.sort(function(a, b) {
+                var ac = a.querySelectorAll('td')[colIdx];
+                var bc = b.querySelectorAll('td')[colIdx];
+                var at = ac ? ac.textContent.trim() : '';
+                var bt = bc ? bc.textContent.trim() : '';
+                var av, bv;
+                if (type === 'currency' || type === 'number') {
+                  av = parseFloat(at.replace(/[$,\s]/g, ''));
+                  bv = parseFloat(bt.replace(/[$,\s]/g, ''));
+                  if (isNaN(av)) av = asc ? Infinity : -Infinity;
+                  if (isNaN(bv)) bv = asc ? Infinity : -Infinity;
+                } else if (type === 'percent') {
+                  av = parseFloat(at.replace(/[+%\s]/g, ''));
+                  bv = parseFloat(bt.replace(/[+%\s]/g, ''));
+                  if (isNaN(av)) av = asc ? Infinity : -Infinity;
+                  if (isNaN(bv)) bv = asc ? Infinity : -Infinity;
+                } else {
+                  av = at.toLowerCase(); bv = bt.toLowerCase();
+                }
+                return av < bv ? (asc ? -1 : 1) : av > bv ? (asc ? 1 : -1) : 0;
+              });
+              rows.forEach(function(row, i) {
+                row.className = row.className.replace(/\bbg-(?:white|gray-50)\b/g, '').trim() + ' ' + (i % 2 === 0 ? 'bg-white' : 'bg-gray-50');
+                tbody.appendChild(row);
+              });
+            });
+          });
+        });
+      }
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initSortableTables);
+      } else {
+        initSortableTables();
+      }
+    })();
+  </script>
 </body>
 </html>`;
 }

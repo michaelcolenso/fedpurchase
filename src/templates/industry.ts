@@ -48,13 +48,13 @@ export function renderIndustryPage(data: IndustryPageData): string {
   const agencyTable = agencyBreakdown.length > 0 ? `
     <h2 class="text-lg font-semibold mt-8 mb-3">Agency Breakdown</h2>
     <div class="bg-white border border-gray-200 rounded-lg overflow-x-auto">
-      <table class="w-full text-sm">
+      <table class="w-full text-sm" data-sortable>
         <thead class="bg-gray-50 border-b border-gray-200">
           <tr>
-            <th class="text-left px-4 py-3 font-medium text-gray-600">Agency</th>
-            <th class="text-right px-4 py-3 font-medium text-gray-600">Total Spend</th>
-            <th class="text-right px-4 py-3 font-medium text-gray-600">Transactions</th>
-            <th class="text-right px-4 py-3 font-medium text-gray-600">Vendors</th>
+            <th class="text-left px-4 py-3 font-medium text-gray-600" data-sort="text">Agency</th>
+            <th class="text-right px-4 py-3 font-medium text-gray-600" data-sort="currency">Total Spend</th>
+            <th class="text-right px-4 py-3 font-medium text-gray-600" data-sort="number">Transactions</th>
+            <th class="text-right px-4 py-3 font-medium text-gray-600" data-sort="number">Vendors</th>
           </tr>
         </thead>
         <tbody>
@@ -79,12 +79,12 @@ export function renderIndustryPage(data: IndustryPageData): string {
   const vendorsTable = topVendors.length > 0 ? `
     <h2 class="text-lg font-semibold mt-8 mb-3">Top Vendors</h2>
     <div class="bg-white border border-gray-200 rounded-lg overflow-x-auto">
-      <table class="w-full text-sm">
+      <table class="w-full text-sm" data-sortable>
         <thead class="bg-gray-50 border-b border-gray-200">
           <tr>
-            <th class="text-left px-4 py-3 font-medium text-gray-600">Vendor</th>
-            <th class="text-right px-4 py-3 font-medium text-gray-600">Total Amount</th>
-            <th class="text-right px-4 py-3 font-medium text-gray-600">Transactions</th>
+            <th class="text-left px-4 py-3 font-medium text-gray-600" data-sort="text">Vendor</th>
+            <th class="text-right px-4 py-3 font-medium text-gray-600" data-sort="currency">Total Amount</th>
+            <th class="text-right px-4 py-3 font-medium text-gray-600" data-sort="number">Transactions</th>
           </tr>
         </thead>
         <tbody>
