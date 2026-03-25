@@ -1,19 +1,31 @@
 import type { Context } from 'hono';
-import { drizzle } from 'drizzle-orm/d1';
 import { renderHomePage } from '../templates/home';
 import { currentFiscalYear } from '../lib/format';
 import type { Env } from '../types';
 
 export async function homeHandler(c: Context<{ Bindings: Env }>): Promise<Response> {
   const env = c.env;
-  const fy = currentFiscalYear();
+  let fy = currentFiscalYear();
 
-  // Total stats
-  const statsRow = await env.DB.prepare(`
-    SELECT SUM(amount) AS total_amount, COUNT(*) AS total_transactions
-    FROM micro_purchases
-    WHERE fiscal_year = ?
-  `).bind(fy).first<{ total_amount: number; total_transactions: number }>();
+  // Fall back to most recent FY with data if current FY has none yet
+  const statsRow = await (async () => {
+    const row = await env.DB.prepare(`
+      SELECT SUM(amount) AS total_amount, COUNT(*) AS total_transactions
+      FROM micro_purchases WHERE fiscal_year = ?
+    `).bind(fy).first<{ total_amount: number; total_transactions: number }>();
+    if (row && row.total_transactions > 0) return row;
+    const latest = await env.DB.prepare(`
+      SELECT fiscal_year FROM micro_purchases ORDER BY fiscal_year DESC LIMIT 1
+    `).first<{ fiscal_year: number }>();
+    if (latest) {
+      fy = latest.fiscal_year;
+      return env.DB.prepare(`
+        SELECT SUM(amount) AS total_amount, COUNT(*) AS total_transactions
+        FROM micro_purchases WHERE fiscal_year = ?
+      `).bind(fy).first<{ total_amount: number; total_transactions: number }>();
+    }
+    return row;
+  })();
 
   // Top agencies
   const agencyRows = await env.DB.prepare(`

@@ -22,7 +22,11 @@ export async function agencyPscHandler(c: Context<{ Bindings: Env }>): Promise<R
     return c.html(cached);
   }
 
-  const fy = currentFiscalYear();
+  // Use most recent FY that has rollup data (handles reporting lag between FYs)
+  const latestRollupFy = await env.DB.prepare(`
+    SELECT MAX(fiscal_year) AS fy FROM agency_psc_rollups
+  `).first<{ fy: number | null }>();
+  const fy = latestRollupFy?.fy ?? currentFiscalYear();
 
   // Lookup agency
   const agency = await env.DB.prepare(`SELECT * FROM agencies WHERE slug = ?`)
@@ -179,11 +183,15 @@ export async function agencyHandler(c: Context<{ Bindings: Env }>): Promise<Resp
   const cached = await kvGet(env, cacheKey);
   if (cached) return c.html(cached);
 
-  const fy = currentFiscalYear();
-
   const agency = await env.DB.prepare(`SELECT * FROM agencies WHERE slug = ?`)
     .bind(agencySlug).first<{ id: number; name: string; slug: string; abbreviation: string | null }>();
   if (!agency) return c.notFound();
+
+  // Use most recent FY with data for this agency
+  const latestFyRow = await env.DB.prepare(`
+    SELECT MAX(fiscal_year) AS fy FROM micro_purchases WHERE agency_id = ?
+  `).bind(agency.id).first<{ fy: number | null }>();
+  const fy = latestFyRow?.fy ?? currentFiscalYear();
 
   const statsRow = await env.DB.prepare(`
     SELECT SUM(amount) AS total_amount, COUNT(*) AS total_transactions
