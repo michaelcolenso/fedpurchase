@@ -28,6 +28,11 @@ if (!fyArg) {
   process.exit(1);
 }
 
+if (!process.env.ADMIN_SECRET) {
+  console.error('ADMIN_SECRET env var is required');
+  process.exit(1);
+}
+
 const proxyUrl = process.env.HTTPS_PROXY || process.env.https_proxy;
 const proxyAgent = proxyUrl ? new ProxyAgent(proxyUrl) : undefined;
 
@@ -222,7 +227,7 @@ async function main() {
   };
   const resp = await proxyFetchWorker('https://fedpurchase.aged-morning-c8e4.workers.dev/admin/ingest', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer gp-admin-7x9mK2pQnR4wL8vZ' },
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${process.env.ADMIN_SECRET}` },
     body: '{}',
   });
   const text = await resp.text();
