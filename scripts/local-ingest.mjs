@@ -13,7 +13,11 @@
 import { ProxyAgent, fetch as uFetch } from 'undici';
 
 const WORKER_URL = 'https://fedpurchase.aged-morning-c8e4.workers.dev';
-const ADMIN_SECRET = 'gp-admin-7x9mK2pQnR4wL8vZ';
+const ADMIN_SECRET = process.env.ADMIN_SECRET;
+if (!ADMIN_SECRET) {
+  console.error('ADMIN_SECRET env var is required');
+  process.exit(1);
+}
 const USA_SPENDING = 'https://api.usaspending.gov';
 const PAGE_SIZE = 100;
 const RATE_DELAY_MS = 700;
